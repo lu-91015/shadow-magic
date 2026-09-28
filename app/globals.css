@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-ink-900 text-brand-50 font-round antialiased;
+  background-image:
+    radial-gradient(1200px 600px at 80% -10%, rgba(246, 79, 151, 0.18), transparent),
+    radial-gradient(900px 500px at 0% 10%, rgba(123, 25, 69, 0.25), transparent);
+  background-attachment: fixed;
+}
+
+.glass {
+  @apply bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl;
+}
+
+.chip {
+  @apply px-3 py-1 rounded-full text-xs bg-white/10 text-brand-100;
+}
+
+/* 动态正文里的自定义表情包：与文字行高对齐的内联图片 */
+.dyn-emoji {
+  display: inline-block;
+  height: 1.25em;
+  width: auto;
+  vertical-align: -0.25em;
+  margin: 0 1px;
+}
+
+/* 正文里的 @、话题、外链 */
+.dyn-link {
+  @apply text-brand-300 hover:text-brand-100 underline-offset-2 hover:underline;
+}
+
+/* 熊猫衣柜立绘切换淡入 */
+@keyframes fadein {
+  from {
+    opacity: 0;
+    transform: translateX(2rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 熊猫衣柜立绘横向无缝滚动（复制两份，滚动到 -50% 即一圈） */
+@keyframes scrollleft {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}

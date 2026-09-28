@@ -1,0 +1,33 @@
+# dependencies / build
+node_modules/
+.venv/
+.playwright-cli/
+.next/
+out/
+
+# env / secrets
+.env
+.env.local
+.env*.local
+
+# data & runtime artifacts
+data/
+logs/
+public/dynamics/
+public/characters/*
+!public/characters/.gitkeep
+tools/ffmpeg/
+
+# logs / stderr / temp files
+*.log
+*.err
+.devlog.txt
+tsconfig.tsbuildinfo
+next-env.d.ts
+chi_sim.traineddata
+
+# OS / editor
+.DS_Store
+
+# agent / ide data
+.codebuddy/

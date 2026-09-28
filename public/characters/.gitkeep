@@ -1,0 +1,2 @@
+# 将李豆沙立绘素材放在此目录，并在 lib/characters.ts 中填写对应 src 路径。
+# 支持 PNG / WebP / Live2D 模型目录（Live2D 需额外接入 pixi-live2d 等运行时）。

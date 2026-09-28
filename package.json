@@ -1,0 +1,57 @@
+{
+  "name": "lidousha-site",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "sync": "tsx scripts/sync.ts",
+    "fetch:characters": "tsx scripts/fetch-characters.ts",
+    "backfill:dyn-images": "tsx scripts/backfill-dyn-images.ts",
+    "sync:comments": "tsx scripts/sync-comments.ts",
+    "sync:dynamics": "tsx scripts/sync-dynamics.ts",
+    "sync:live": "tsx scripts/sync-live.ts",
+    "sync:snapshot": "tsx scripts/sync-snapshot.ts",
+    "sync:danmaku": "tsx scripts/sync-danmaku.ts",
+    "live-monitor": "tsx scripts/live-monitor.ts",
+    "sync:songs": "tsx scripts/sync-songs.ts",
+    "sync:covers": "tsx scripts/sync-covers.ts",
+    "sync:stats": "tsx scripts/sync-stats.ts",
+    "sync:authors": "tsx scripts/sync-authors.ts",
+    "verify:tags": "tsx scripts/sync-verify-tags.ts",
+    "report:names": "tsx scripts/report-clip-names.ts",
+    "sync:videos": "tsx scripts/sync-videos.ts",
+    "fetch:garb": "tsx scripts/fetch-garb.ts",
+    "seed:playlist": "tsx scripts/seed-playlist.ts"
+  },
+  "dependencies": {
+    "next": "14.2.5",
+    "nodemailer": "^6.10.1",
+    "pg": "8.12.0",
+    "qrcode": "^1.5.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.10",
+    "@types/pg": "8.11.6",
+    "@types/qrcode": "^1.5.6",
+    "@types/nodemailer": "^6.4.14",
+    "@types/ws": "^8.5.10",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "autoprefixer": "10.4.19",
+    "postcss": "8.4.39",
+    "sharp": "^0.35.4",
+    "tailwindcss": "3.4.6",
+    "tesseract.js": "^7.0.0",
+    "tsx": "4.16.2",
+    "typescript": "5.5.3"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true
+  }
+}
