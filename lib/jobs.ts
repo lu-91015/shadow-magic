@@ -16,6 +16,7 @@ import {
   manualUpsertVideo,
   upsertDynamic,
   existsDynamic,
+  getDynamicRaw,
   upsertLiveSession,
   queryDynamics,
   querySongStreams,
@@ -274,6 +275,28 @@ export async function runJob(
             pageAllExist = false;
           } else {
             skipped++;
+            // 增量只插不更，但直播回放等动态首次入库时标题/bvid 可能尚未生成，
+            // 之后接口补齐也不会再更新 → 首页“最新动态”显示“暂无”。
+            // 因此：已存在记录缺标题、而本次抓取有标题时，补更（保留已本地化的图片）。
+            const raw = await getDynamicRaw(d.id);
+            if (raw && !raw.video?.title && d.video?.title && d.video.title.trim()) {
+              const oldCover = raw.video?.cover ?? '';
+              const merged = {
+                ...raw,
+                text: d.text || raw.text,
+                video: {
+                  ...(raw.video ?? { cover: '', title: '', bvid: '' }),
+                  title: d.video.title,
+                  bvid: d.video.bvid || raw.video?.bvid || '',
+                  cover: oldCover.startsWith('/dynamics/')
+                    ? oldCover
+                    : d.video.cover || oldCover,
+                },
+              };
+              await upsertDynamic(merged as any);
+              count++;
+              pageAllExist = false;
+            }
           }
         }
         pages++;

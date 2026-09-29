@@ -869,6 +869,21 @@ export async function existsDynamic(id: string): Promise<boolean> {
   return rows.length > 0;
 }
 
+// 读取已入库动态的原始 DynItem（用于增量同步时补更缺标题的直播回放类动态）
+export async function getDynamicRaw(id: string): Promise<DynItem | null> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ raw: string }>(
+    'SELECT raw FROM dyn WHERE id=$1',
+    [id],
+  );
+  if (!rows[0]?.raw) return null;
+  try {
+    return JSON.parse(rows[0].raw) as DynItem;
+  } catch {
+    return null;
+  }
+}
+
 // ---------- 歌单 ----------
 export async function queryPlaylist(): Promise<PlaylistData> {
   await ensureReady();
