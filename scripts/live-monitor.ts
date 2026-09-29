@@ -176,7 +176,10 @@ async function runSession(
   const url = `wss://${host}:${wssPort}/sub`;
   log(`连接 ${url} uid=${uid} token?=${!!token}`);
 
-  let currentPeak = opts.online ?? 0;
+  let currentPeak = 0; // 只累计真实"房间观众"数，不混入人气值
+  let wsOnline: number | null = null; // WS ONLINE_RANK_COUNT 的真实观众数
+  let wsOnlineTs = 0;
+  let loggedOnline = false;
   let ended = false;
   let reconnectAttempts = 0;
   const giftBatches = new Set<string>(); // 已由 SEND_GIFT 落库的连击批次
@@ -191,12 +194,7 @@ async function runSession(
   function handlePackets(buf: Buffer) {
     for (const p of parsePackets(buf)) {
       if (p.op === 3) {
-        try {
-          const n = p.body.readUInt32BE(0);
-          if (n > currentPeak) currentPeak = n;
-        } catch {
-          /* ignore */
-        }
+        // 心跳返回的是人气值（~5万级别），不是真实房间观众数，不再计入峰值
         continue;
       }
       if (p.op !== 5) continue;
@@ -221,6 +219,18 @@ async function runSession(
             ts: Math.floor((info[0]?.[4] ?? Date.now()) / 1000),
             raw: json,
           }).catch((e) => log('danmaku insert err', e?.message));
+        } else if (cmd === 'ONLINE_RANK_COUNT') {
+          // 真实"房间观众"数（页面顶部 房间观众(N)），区别于人气值
+          const cnt = Number(d?.count ?? 0);
+          if (cnt > 0) {
+            wsOnline = cnt;
+            wsOnlineTs = Date.now();
+            if (cnt > currentPeak) currentPeak = cnt;
+            if (!loggedOnline) {
+              loggedOnline = true;
+              log(`房间观众(真实在线)=${cnt}`);
+            }
+          }
         } else if (
           cmd === 'SUPER_CHAT_MESSAGE' ||
           cmd === 'SUPER_CHAT_MESSAGE_DETAIL'
@@ -542,10 +552,15 @@ async function runSession(
   pollTimer = setInterval(async () => {
     try {
       const st = await opts.getStatus();
-      if (st?.online) {
-        if (st.online > currentPeak) currentPeak = st.online;
+      // 优先用 WS ONLINE_RANK_COUNT 的真实观众数（2分钟内有效），拿不到再回退人气值
+      const sample =
+        wsOnline != null && Date.now() - wsOnlineTs < 120_000
+          ? wsOnline
+          : st?.online ?? null;
+      if (sample) {
+        if (sample > currentPeak) currentPeak = sample;
         // 记录同接（在线人数）时间序列，每 30s 采样一次，用于绘制同接曲线
-        void insertRtOnline(sessionId, now(), st.online).catch(() => {});
+        void insertRtOnline(sessionId, now(), sample).catch(() => {});
       }
       if (currentPeak > 0) {
         void updateRtSessionPeak(sessionId, currentPeak).catch(() => {});
