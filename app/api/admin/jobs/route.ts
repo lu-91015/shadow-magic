@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, getClientIp, requireView } from '@/lib/auth';
 import { queryJobs, createJob, insertAudit } from '@/lib/db';
 import { JOB_TYPES } from '@/lib/jobs';
-import { getJobStates } from '@/lib/scheduler';
+import { getJobStates, getPersistedJobStates, nextCron } from '@/lib/scheduler';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,12 +11,20 @@ export async function GET(req: Request) {
   if (!(await requireView(req)))
     return NextResponse.json({ ok: false }, { status: 401 });
   const jobs = await queryJobs();
-  const states = getJobStates();
-  const jobsWithState = jobs.map((j) => ({
-    ...j,
-    nextRun: states[j.id]?.nextRun ?? null,
-    running: states[j.id]?.running ?? false,
-  }));
+  // 调度器跑在 monitor 守护进程，web 进程内存里没有状态；
+  // 读取其持久化快照（admin_kv），超过 10 分钟未刷新视为过期，
+  // 过期/缺失时按 cron 重新计算 nextRun 兜底（重试退避信息丢失可接受）。
+  const snap = await getPersistedJobStates();
+  const fresh = !!snap && Date.now() - snap.t < 10 * 60_000;
+  const mem = getJobStates();
+  const jobsWithState = jobs.map((j) => {
+    const st = fresh ? snap!.states[j.id] : mem[j.id];
+    return {
+      ...j,
+      nextRun: st?.nextRun ?? nextCron(j.cron, new Date())?.getTime() ?? null,
+      running: st?.running ?? false,
+    };
+  });
   return NextResponse.json({ ok: true, jobs: jobsWithState, types: JOB_TYPES });
 }
 

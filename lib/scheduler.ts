@@ -1,6 +1,6 @@
 // 内存调度器：在 Next 服务进程内常驻，按 job 表里的 cron 触发任务。
 // 每次运行写 job_run 记录（状态/日志/报错），失败自动重试最多 3 次。
-import { queryJobs, createJobRun, finishJobRun, appendJobLog } from './db';
+import { queryJobs, createJobRun, finishJobRun, appendJobLog, getKv, setKv } from './db';
 import { runJob, JOB_TYPES } from './jobs';
 import { loadBiliCookieFromDb } from './bilibili';
 import { notifyFailure } from './notify';
@@ -53,6 +53,7 @@ function nextCron(cron: string, from: Date): Date | null {
   }
   return null;
 }
+export { nextCron };
 
 let started = false;
 let timer: NodeJS.Timeout | null = null;
@@ -76,13 +77,40 @@ export function stopScheduler(): void {
   started = false;
 }
 
-// 供管理接口读取“下一次运行时间 / 是否正在运行”（内存态，进程重启后重新计算）。
+// 供管理接口读取"下一次运行时间 / 是否正在运行"。
+// 调度器在 monitor 守护进程内，而管理页 API 在 web 进程——跨进程读不到内存，
+// 因此状态同步持久化到 admin_kv，由 API 侧读取。
+const STATE_KEY = 'scheduler_states';
+
 export function getJobStates(): Record<number, { nextRun: number; running: boolean; retries: number }> {
   const out: Record<number, { nextRun: number; running: boolean; retries: number }> = {};
   for (const [id, st] of states) {
     out[id] = { nextRun: st.nextRun, running: st.running, retries: st.retries };
   }
   return out;
+}
+
+async function persistStates(): Promise<void> {
+  try {
+    await setKv(STATE_KEY, JSON.stringify({ t: Date.now(), states: getJobStates() }));
+  } catch {
+    /* 持久化失败不影响调度 */
+  }
+}
+
+// web 进程读取最近一次持久化的调度状态（含写入时间戳，用于新鲜度判断）
+export async function getPersistedJobStates(): Promise<{
+  t: number;
+  states: Record<number, { nextRun: number; running: boolean; retries: number }>;
+} | null> {
+  try {
+    const raw = await getKv(STATE_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as { t: number; states: Record<number, { nextRun: number; running: boolean; retries: number }> };
+    return d && typeof d.t === 'number' && d.states ? d : null;
+  } catch {
+    return null;
+  }
 }
 
 async function tick(): Promise<void> {
@@ -111,6 +139,7 @@ async function tick(): Promise<void> {
       void runJobProtected(job, st, now);
     }
   }
+  void persistStates();
 }
 
 async function runJobProtected(
@@ -152,6 +181,7 @@ async function runJobProtected(
     }
   } finally {
     st.running = false;
+    void persistStates();
   }
 }
 
