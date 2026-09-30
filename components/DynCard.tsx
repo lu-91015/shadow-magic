@@ -6,6 +6,19 @@ function fmt(n: string | number): string {
   return v >= 10000 ? (v / 10000).toFixed(1) + ' 万' : v.toLocaleString();
 }
 
+function fmtTime(ts: number): string {
+  if (!ts) return '';
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(ts * 1000));
+}
+
 export default function DynCard({
   d,
   link = true,
@@ -27,7 +40,7 @@ export default function DynCard({
         />
         <div>
           <div className="text-brand-100 font-medium">{d.name}</div>
-          <div className="text-xs text-white/40">{d.timeText || d.pubTime}</div>
+          <div className="text-xs text-white/40">{d.timeText || fmtTime(d.pubTime)}</div>
         </div>
       </div>
 

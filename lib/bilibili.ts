@@ -1023,6 +1023,20 @@ export async function getDynamics(
   };
 }
 
+// B站未返回 time_text 时的展示兜底：固定用东八区格式化，避免显示原始秒级时间戳
+function fmtCST(ts: number): string {
+  if (!ts) return '';
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(ts * 1000));
+}
+
 async function normalizeDynamicItem(
   raw: any,
   cookie = process.env.BILI_COOKIE ?? '',
@@ -1104,13 +1118,21 @@ async function normalizeDynamicItem(
       desc.rich_text_nodes ?? major.opus?.summary?.rich_text_nodes;
     const textHtml = await buildContentHtml(contentNodes, text, cookie);
 
+    // "空壳"动态：无正文、无图片、无视频/直播标题、无转发——
+    // B站通知类占位数据，不展示不落库，避免垃圾卡片
+    if (!text && images.length === 0 && !video?.title?.trim() && !forward) {
+      return null;
+    }
+
+    const pubTs = Number(author.pub_ts) || 0;
+
     return {
       id: raw.id_str ?? String(raw.id ?? ''),
       name: author.name ?? '',
       face: author.face || AVATAR_URL,
       // pub_time 是展示串（如"8月2日"），真实时间戳在 pub_ts（秒）
-      pubTime: Number(author.pub_ts) || 0,
-      timeText: author.time_text || author.pub_time || '',
+      pubTime: pubTs,
+      timeText: author.time_text || author.pub_time || fmtCST(pubTs),
       text,
       textHtml,
       images,
