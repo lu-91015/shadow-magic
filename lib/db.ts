@@ -1891,6 +1891,17 @@ export async function getRtActiveSession(roomId?: string): Promise<RtSession | n
   return rows[0] ?? null;
 }
 
+// 同房间的全部未收尾会话（最新在前）。历史遗留场景：多个监控进程并发建会话
+// 会产生多个空壳行，启动会话时保留最新一个、其余补收尾。
+export async function getRtActiveSessions(roomId: string): Promise<RtSession[]> {
+  await ensureReady();
+  const { rows } = await getPool().query<RtSession>(
+    `SELECT * FROM live_rt_session WHERE end_time IS NULL AND room_id=$1 ORDER BY start_time DESC`,
+    [roomId],
+  );
+  return rows;
+}
+
 // 写入一次同接（在线人数）采样点
 export async function insertRtOnline(
   sessionId: string,

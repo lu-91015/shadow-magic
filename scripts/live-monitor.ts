@@ -16,6 +16,7 @@ import {
   updateRtSessionPeak,
   getRtCounts,
   getRtActiveSession,
+  getRtActiveSessions,
   insertRtDanmaku,
   insertRtSc,
   insertRtGift,
@@ -154,8 +155,23 @@ async function runSession(
     online?: number | null;
   },
 ): Promise<void> {
-  // 若同房间已有未结束的会话（如进程重启/探测抖动），直接复用，避免重复建会话
-  const prev = await getRtActiveSession(roomId).catch(() => null);
+  // 若同房间已有未结束的会话（如进程重启/探测抖动），直接复用，避免重复建会话；
+  // 若存在多个（历史遗留的重复会话），保留最新一个复用，其余按各自事件数补收尾
+  const actives = await getRtActiveSessions(roomId).catch(() => []);
+  const prev = actives[0] ?? null;
+  for (const dup of actives.slice(1)) {
+    const c = await getRtCounts(dup.id).catch(() => ({
+      danmaku: 0,
+      sc: 0,
+      gift: 0,
+      interact: 0,
+      enter: 0,
+      follow: 0,
+      giftCoin: 0,
+    }));
+    await finishRtSession(dup.id, now(), dup.online_peak ?? 0, c).catch(() => {});
+    log(`清理重复会话 ${dup.id} 弹幕=${c.danmaku}`);
+  }
   const sessionId = prev ? prev.id : `rt_${roomId}_${Date.now()}`;
   await upsertRtSession({
     id: sessionId,
