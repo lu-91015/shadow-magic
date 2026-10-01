@@ -6,11 +6,17 @@
   color-scheme: dark;
 }
 
+/* 根字号随视口平滑缩放：1080P 回到约 16px 基准（保证首屏恰好一屏不溢出），
+   2K/4K 继续放大到 26px 上限。15px(小屏下限) → 约15.7px(1080P) → 26px(4K)。 */
+html {
+  font-size: clamp(15px, 0.4vw + 8px, 26px);
+}
+
 body {
   @apply bg-ink-900 text-brand-50 font-round antialiased;
   background-image:
-    radial-gradient(1200px 600px at 80% -10%, rgba(246, 79, 151, 0.18), transparent),
-    radial-gradient(900px 500px at 0% 10%, rgba(123, 25, 69, 0.25), transparent);
+    radial-gradient(1200px 600px at 80% -10%, rgba(56, 139, 253, 0.22), transparent),
+    radial-gradient(900px 500px at 0% 10%, rgba(13, 60, 120, 0.40), transparent);
   background-attachment: fixed;
 }
 

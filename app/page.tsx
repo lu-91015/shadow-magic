@@ -176,7 +176,7 @@ async function HomeScreens() {
       {/* 第一幕：首页 / 房间 */}
       <section
         id="screen-hero"
-        className="relative h-full snap-start snap-always flex items-center justify-center px-4 overflow-y-auto"
+        className="relative h-full snap-start snap-always flex items-center justify-center px-4 overflow-y-auto md:overflow-hidden"
       >
         <GarbBackdrop />
         {/* 左缘：竹枝装饰（钉在画面边上，营造分散感） */}
@@ -198,9 +198,9 @@ async function HomeScreens() {
           <span>🐾</span>
           <span className="ml-2">🐾</span>
         </div>
-        <div className="relative w-full max-w-[1800px] mx-auto flex flex-col md:flex-row md:items-stretch md:justify-between gap-6 py-6 pl-1 md:pl-1 xl:pl-1 pr-6 md:pr-10 xl:pr-14 md:h-full">
+        <div className="relative w-full max-w-[min(94vw,2800px)] mx-auto flex flex-col md:flex-row md:items-stretch md:justify-between gap-6 py-6 pl-1 md:pl-1 xl:pl-1 pr-6 md:pr-10 xl:pr-14 md:h-full">
           {/* 左栏：欢迎牌 / 已投喂竹子+开播 / 三连，贴左铺排 */}
-          <div className="flex flex-col justify-start w-full md:w-[30rem] lg:w-[34rem] shrink-0 order-2 md:order-1 gap-6 md:-translate-x-5">
+          <div className="flex flex-col justify-start w-full md:w-[22rem] lg:w-[30rem] xl:w-[34rem] shrink-0 order-2 md:order-1 gap-6 md:-translate-x-5 md:min-h-0 md:overflow-y-auto">
             {/* 左上：竹林入口竹牌（继续放大，钉在左上角） */}
             <div className="hidden md:flex items-center gap-5 self-start rounded-2xl border-2 border-emerald-300/50 bg-emerald-900/50 px-9 py-6 -rotate-2 shadow-lg">
               <span className="text-7xl">🎋</span>
@@ -378,7 +378,7 @@ async function HomeScreens() {
           </div>
 
           {/* 右栏：上装饰 + 四个入口 + 下装饰，全部直接参与纵向均布铺满 */}
-          <nav className="order-3 hidden md:flex flex-col justify-between items-end w-[28rem] lg:w-[32rem] shrink-0">
+          <nav className="order-3 hidden md:flex flex-col justify-between items-end w-[24rem] lg:w-[28rem] xl:w-[30rem] shrink-0 md:min-h-0 md:overflow-y-auto">
             {/* 右上：竹枝装饰 */}
             <div aria-hidden className="text-2xl -rotate-12 opacity-50 select-none self-start pl-2">🎋</div>
             {PORTALS.map((p, i) => (
