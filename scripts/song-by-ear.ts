@@ -205,21 +205,25 @@ async function recognizeSegment(
   tmp: string,
   auddEnabled: boolean,
 ): Promise<{ title: string; artist: string; t: number; tools: string } | null> {
-  const offsets = [0, 30, 60].filter((o) => seg.t + o <= duration - CLIP_SEC - 5);
+  const offsets = [0, 30].filter((o) => seg.t + o <= duration - CLIP_SEC - 5);
   const matched: { t: number; res: EarResult }[] = [];
   for (let i = 0; i < offsets.length; i++) {
     const t = seg.t + offsets[i];
     const wav = path.join(tmp, `seg${Math.floor(t)}.wav`);
     const ok = await extractWithRetry(getUrl, t, wav);
     if (!ok) continue;
-    // 主工具 shazam
-    let res: EarResult;
-    try {
-      res = await runAudioId(wav);
-    } catch (e) {
-      console.log(`    ${t}s 识别异常：${(e as Error).message}`);
-      continue;
+    // 主工具 shazam（网络抖动时重试）
+    let res: EarResult | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        res = await runAudioId(wav);
+        break;
+      } catch (e) {
+        console.log(`    ${t}s 识别异常（第${attempt + 1}次）：${(e as Error).message.slice(0, 50)}`);
+        await sleep(2000);
+      }
     }
+    if (!res) continue;
     if (res.ok && res.title) {
       matched.push({ t, res });
       // 命中后追加一次同窗口采样做共识确认（不无限采样）
@@ -318,6 +322,7 @@ async function processBvid(bvid: string): Promise<number> {
     for (const seg of segs) {
       const rec = await recognizeSegment(getUrl, seg, duration, tmp, auddEnabled);
       if (!rec) continue;
+      await sleep(1500); // 间隔降低 Shazam 限流风险
       const key = rec.title.normalize('NFKC').toLowerCase();
       if (existing.has(key)) {
         console.log(`    ${rec.t}s：${rec.title}（已存在，跳过）`);

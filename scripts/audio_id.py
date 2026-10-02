@@ -15,10 +15,16 @@ async def shazam_recognize(path: str) -> dict:
     from shazamio import Shazam
 
     shazam = Shazam()
-    try:
-        out = await shazam.recognize(path)
-    except Exception as e:  # 网络异常等
-        return {"ok": False, "error": str(e)[:200]}
+    last_err = ""
+    for _ in range(3):  # 网络抖动/限流重试
+        try:
+            out = await shazam.recognize(path)
+            break
+        except Exception as e:  # 网络异常等
+            last_err = str(e)[:200]
+            await asyncio.sleep(2)
+    else:
+        return {"ok": False, "error": last_err or "shazam_fail"}
     track = out.get("track")
     if not track:
         return {"ok": False, "error": "no_match"}
