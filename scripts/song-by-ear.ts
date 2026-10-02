@@ -38,6 +38,8 @@ const MIN_GAP = Number(process.env.MIN_GAP ?? 90); // 相邻段落最小间隔�
 const CLIP_SEC = Number(process.env.CLIP_SEC ?? 30); // 每段音频时长（秒）
 const OFFSET_BASE = Number(process.env.OFFSET_BASE ?? 0); // 采样基准偏移（本地/服务器错开）
 const WINDOW = 30; // 弹幕密度统计窗口（秒）
+const GRID_SEC = Number(process.env.GRID_SEC ?? 480); // 兜底网格采样间隔（秒）：保证整场均匀覆盖，命中安静的唱歌段
+const MAX_SEG = Number(process.env.MAX_SEG ?? 60); // 单场最多识别段落上限
 const AUDIO_ID = path.join(process.cwd(), 'scripts', 'audio_id.py');
 const LOCAL_FFMPEG_DIR = path.join(process.cwd(), 'tools', 'ffmpeg', 'bin');
 // pydub（shazamio 依赖）需要 ffmpeg 在 PATH：取 FFMPEG 所在目录；若只是裸命令（如 'ffmpeg'），用 /usr/local/bin
@@ -58,8 +60,12 @@ interface Seg {
   score: number;
 }
 
-// 从弹幕分布定位唱歌段落：30s 窗口计数 + 打 call/关键词加权，取互不重叠的 top 段落
+// 定位唱歌段落：
+//  1) 兜底网格采样：整场按 GRID_SEC 均匀铺点，保证「游戏+安静唱歌」类也能覆盖到（不依赖弹幕信号）；
+//  2) 弹幕加分：高弹幕密度 / 打 call / 求歌 窗口作为额外候选叠加（与网格点去重）。
+// 这样即使弹幕几乎没有「打call/求歌」信号，也能靠网格均匀命中每首歌。
 function detectSegments(dan: { vtime: number; text: string | null }[], duration: number): Seg[] {
+  // 弹幕加权
   const buckets = new Map<number, { count: number; weight: number }>();
   for (const d of dan) {
     if (!Number.isFinite(d.vtime) || d.vtime < 0) continue;
@@ -79,10 +85,22 @@ function detectSegments(dan: { vtime: number; text: string | null }[], duration:
     scored.push({ t, score: v.count + v.weight });
   }
   scored.sort((a, b) => b.score - a.score);
+
+  const usable = duration - 300;
+  if (usable <= 0) return [];
+  // 网格点数量：至少 SEGS，长视频按 GRID_SEC 间距铺满，封顶 MAX_SEG
+  const targetCount = Math.min(MAX_SEG, Math.max(SEGS, Math.floor(usable / GRID_SEC)));
+  const step = usable / targetCount;
   const picked: Seg[] = [];
+  const tryAdd = (t: number) => {
+    t = Math.round(t);
+    if (t < 90 || t > duration - CLIP_SEC - 30) return;
+    if (picked.every((p) => Math.abs(p.t - t) >= MIN_GAP)) picked.push({ t, score: 1 });
+  };
+  for (let i = 0; i < targetCount; i++) tryAdd(150 + i * step); // 均匀网格兜底
   for (const s of scored) {
-    if (picked.length >= SEGS) break;
-    if (picked.every((p) => Math.abs(p.t - s.t) >= MIN_GAP)) picked.push(s);
+    if (picked.length >= MAX_SEG) break;
+    tryAdd(s.t); // 弹幕高分窗口叠加
   }
   return picked.sort((a, b) => a.t - b.t);
 }
@@ -260,8 +278,8 @@ async function processBvid(bvid: string): Promise<number> {
     [bvid],
   );
   const dan = dq.rows;
-  if (dan.length < 30) {
-    console.log(`    弹幕过少（${dan.length}），跳过`);
+  if (dan.length < 5) {
+    console.log(`    弹幕为空（${dan.length}），无法定位，跳过`);
     return 0;
   }
   const segs = detectSegments(dan, duration);
