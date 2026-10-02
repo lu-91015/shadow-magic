@@ -113,3 +113,529 @@
  GET /api/live/status 200 in 8ms
  GET /api/admin/monitor-status 200 in 8ms
  GET /api/live/status 200 in 85ms
+ GET /api/live/status 200 in 146ms
+ GET /api/admin/lives/BV1tj8p6REo2 200 in 237ms
+ GET /api/danmaku?senders=1&bvid=BV1tj8p6REo2 200 in 11ms
+ GET /api/admin/lives/BV1tj8p6REo2/danmaku?limit=200&offset=0 200 in 244ms
+ GET /api/admin/lives/BV1Jf8A6sEkp 200 in 251ms
+ GET /api/danmaku?senders=1&bvid=BV1Jf8A6sEkp 200 in 12ms
+ GET /api/admin/lives/BV1Jf8A6sEkp/danmaku?limit=200&offset=0 200 in 14ms
+ GET /api/live/status 200 in 8ms
+ GET /api/admin/monitor-status 200 in 8ms
+ GET /api/live/status 200 in 83ms
+ GET /api/admin/lives/BV18Suo6BE15 200 in 249ms
+ GET /api/danmaku?senders=1&bvid=BV18Suo6BE15 200 in 11ms
+ GET /api/admin/lives/BV18Suo6BE15/danmaku?limit=200&offset=0 200 in 15ms
+ GET /api/live/status 200 in 123ms
+ GET /api/admin/lives/BV1qiuV6tELE 200 in 249ms
+ GET /api/danmaku?senders=1&bvid=BV1qiuV6tELE 200 in 11ms
+ GET /api/admin/lives/BV1qiuV6tELE/danmaku?limit=200&offset=0 200 in 15ms
+ GET /api/live/status 200 in 8ms
+ GET /api/admin/monitor-status 200 in 6ms
+ PATCH /api/admin/lives/BV1qiuV6tELE 200 in 12ms
+ GET /api/admin/lives 200 in 272ms
+ GET /api/admin/lives/BV1qiuV6tELE 200 in 347ms
+ GET /api/danmaku?senders=1&bvid=BV1qiuV6tELE 200 in 9ms
+ GET /api/admin/lives/BV1qiuV6tELE/danmaku?limit=200&offset=0 200 in 13ms
+ GET /api/live/status 200 in 130ms
+ GET /api/live/status 200 in 269ms
+ GET / 200 in 112ms
+ ✓ Compiled /api/characters in 197ms (425 modules)
+ ✓ Compiled (427 modules)
+ GET /api/mascot/lines 200 in 456ms
+ GET /api/characters 200 in 463ms
+ GET /api/characters 200 in 464ms
+ GET /api/mascot/lines 200 in 482ms
+ ✓ Compiled /api/song-freq in 45ms (429 modules)
+ GET /api/song-freq?days=30 200 in 128ms
+ GET /api/song-freq?days=30 200 in 157ms
+ GET /api/song-freq?days=90 200 in 31ms
+ GET /api/song-freq?days=all 200 in 15ms
+ GET /api/song-freq?days=90 200 in 8ms
+ GET /api/song-freq?days=all 200 in 9ms
+ GET /api/song-freq?days=90 200 in 10ms
+ GET /api/song-freq?days=all 200 in 44ms
+ GET /api/song-freq?days=90 200 in 10ms
+ ✓ Compiled /api/admin/me in 128ms (360 modules)
+ GET /api/admin/me 200 in 148ms
+ GET /api/admin/me 200 in 8ms
+ ✓ Compiled /api/admin/jobs in 63ms (418 modules)
+ GET /api/admin/jobs 200 in 267ms
+ ✓ Compiled /api/admin/job-runs in 41ms (420 modules)
+ GET /api/admin/jobs 200 in 151ms
+ GET /api/admin/job-runs?limit=30 200 in 180ms
+ GET /api/admin/job-runs?limit=30 200 in 6ms
+ ✓ Compiled /api/admin/monitor-status in 46ms (422 modules)
+ ✓ Compiled (428 modules)
+ GET /api/admin/monitor-status 200 in 273ms
+ GET /api/live/status 200 in 292ms
+ GET /api/live/status 200 in 288ms
+ GET /api/admin/live-rt 200 in 293ms
+ GET /api/admin/monitor-status 200 in 8ms
+ GET /api/admin/live-rt 200 in 15ms
+ GET /api/admin/lives 200 in 433ms
+ GET /api/admin/lives 200 in 215ms
+ GET /api/live/status 200 in 146ms
+ ✓ Compiled /api/admin/lives/[bvid] in 86ms (428 modules)
+ GET /api/admin/lives/BV1CjaQ6NEpT 200 in 382ms
+ ✓ Compiled /api/admin/lives/[bvid]/danmaku in 55ms (430 modules)
+ ✓ Compiled (432 modules)
+ GET /api/admin/lives/BV1CjaQ6NEpT/danmaku?limit=200&offset=0 200 in 203ms
+ GET /api/danmaku?senders=1&bvid=BV1CjaQ6NEpT 200 in 250ms
+ GET /api/live/status 200 in 127ms
+ PATCH /api/admin/lives/BV1CjaQ6NEpT 200 in 15ms
+ GET /api/admin/lives 200 in 256ms
+ GET /api/admin/lives/BV1CjaQ6NEpT 200 in 260ms
+ GET /api/danmaku?senders=1&bvid=BV1CjaQ6NEpT 200 in 9ms
+ GET /api/admin/lives/BV1CjaQ6NEpT/danmaku?limit=200&offset=0 200 in 13ms
+ GET /api/live/status 200 in 12ms
+ GET /api/admin/monitor-status 200 in 12ms
+ ✓ Compiled /api/admin/lives/[bvid]/songs-override in 71ms (434 modules)
+ POST /api/admin/lives/BV1CjaQ6NEpT/songs-override 200 in 558ms
+ GET /api/live/status 200 in 289ms
+ GET /api/live/status 200 in 114ms
+ GET /api/live/status 200 in 9ms
+ GET /api/admin/monitor-status 200 in 12ms
+ GET /api/live/status 200 in 117ms
+ GET /api/live/status 200 in 158ms
+ GET /api/live/status 200 in 9ms
+ GET /api/admin/monitor-status 200 in 11ms
+ GET /api/live/status 200 in 94ms
+ GET /api/live/status 200 in 119ms
+ GET /api/live/status 200 in 8ms
+ GET /api/admin/monitor-status 200 in 8ms
+ GET /api/live/status 200 in 143ms
+ GET /api/live/status 200 in 152ms
+ GET /api/live/status 200 in 52ms
+ GET /api/admin/monitor-status 200 in 50ms
+ GET /api/admin/lives/BV12TTb61E4W 200 in 248ms
+ GET /api/danmaku?senders=1&bvid=BV12TTb61E4W 200 in 27ms
+ GET /api/admin/lives/BV12TTb61E4W/danmaku?limit=200&offset=0 200 in 30ms
+ GET /api/live/status 200 in 127ms
+ PATCH /api/admin/lives/BV12TTb61E4W 200 in 13ms
+ GET /api/admin/lives/BV12TTb61E4W 200 in 299ms
+ GET /api/danmaku?senders=1&bvid=BV12TTb61E4W 200 in 10ms
+ GET /api/admin/lives 200 in 323ms
+ GET /api/admin/lives/BV12TTb61E4W/danmaku?limit=200&offset=0 200 in 17ms
+ GET /api/live/status 200 in 126ms
+ ✓ Compiled /api/song-freq in 97ms (425 modules)
+ GET /api/song-freq?days=30 200 in 170ms
+ GET /api/song-freq?days=30 200 in 205ms
+ GET /api/song-freq?days=90 200 in 10ms
+ GET /api/song-freq?days=30 200 in 42ms
+ GET /api/song-freq?days=90 200 in 10ms
+ ✓ Compiled /api/admin/me in 68ms (360 modules)
+ GET /api/admin/me 200 in 85ms
+ GET /api/admin/me 200 in 7ms
+ ✓ Compiled /api/admin/jobs in 41ms (418 modules)
+ GET /api/admin/jobs 200 in 124ms
+ GET /api/admin/jobs 200 in 13ms
+ ✓ Compiled /api/admin/job-runs in 40ms (420 modules)
+ GET /api/admin/job-runs?limit=30 200 in 101ms
+ GET /api/admin/job-runs?limit=30 200 in 6ms
+ GET /api/admin/jobs 200 in 16ms
+ GET /api/admin/job-runs?limit=30 200 in 5ms
+ GET /api/admin/jobs 200 in 7ms
+ GET /api/admin/job-runs?limit=30 200 in 9ms
+ GET /api/admin/jobs 200 in 6ms
+ GET /api/admin/job-runs?limit=30 200 in 5ms
+ GET /api/admin/jobs 200 in 6ms
+ GET /api/admin/job-runs?limit=30 200 in 7ms
+ GET /api/admin/jobs 200 in 5ms
+ GET /api/admin/job-runs?limit=30 200 in 7ms
+ ✓ Compiled /api/admin/lives in 48ms (420 modules)
+ ✓ Compiled (426 modules)
+ GET /api/admin/monitor-status 200 in 291ms
+ GET /api/admin/monitor-status 200 in 8ms
+ GET /api/live/status 200 in 395ms
+ GET /api/live/status 200 in 394ms
+ GET /api/admin/live-rt 200 in 391ms
+ GET /api/admin/live-rt 200 in 10ms
+ GET /api/admin/lives 200 in 597ms
+ GET /api/admin/lives 200 in 229ms
+ ✓ Compiled /api/admin/lives/[bvid] in 88ms (428 modules)
+ GET /api/admin/lives/BV1CjaQ6NEpT 200 in 418ms
+ ✓ Compiled /api/admin/lives/[bvid]/danmaku in 49ms (430 modules)
+ ✓ Compiled (432 modules)
+ GET /api/danmaku?senders=1&bvid=BV1CjaQ6NEpT 200 in 308ms
+ GET /api/admin/lives/BV1CjaQ6NEpT/danmaku?limit=200&offset=0 200 in 333ms
+ GET /api/live/status 200 in 82ms
+ ✓ Compiled /api/admin/live-rt/[id] in 54ms (432 modules)
+ GET /api/admin/live-rt/rt_22966160_1790942447967 200 in 475ms
+ GET /api/live/status 200 in 133ms
+ GET /api/live/status 200 in 8ms
+ GET /api/admin/monitor-status 200 in 11ms
+ GET /api/live/status 200 in 83ms
+ ✓ Compiled /dynamics in 391ms (757 modules)
+ ✓ Compiled /news in 166ms (641 modules)
+ ✓ Compiled /api/admin/me in 83ms (367 modules)
+ GET /api/admin/me 200 in 507ms
+ GET /api/admin/me 200 in 6ms
+ ✓ Compiled /api/admin/jobs in 43ms (424 modules)
+ GET /api/admin/jobs 200 in 142ms
+ GET /api/admin/jobs 200 in 7ms
+ ✓ Compiled /api/admin/job-runs in 38ms (426 modules)
+ GET /api/admin/job-runs?limit=30 200 in 100ms
+ GET /api/admin/job-runs?limit=30 200 in 4ms
+ ✓ Compiled /api/admin/lives in 134ms (428 modules)
+ ✓ Compiled (434 modules)
+ GET /api/admin/live-rt 200 in 297ms
+ GET /api/admin/live-rt 200 in 14ms
+ GET /api/admin/monitor-status 200 in 361ms
+ GET /api/admin/monitor-status 200 in 9ms
+ GET /api/live/status 200 in 475ms
+ GET /api/live/status 200 in 570ms
+ GET /api/admin/lives 200 in 584ms
+ GET /api/admin/lives 200 in 212ms
+ GET /api/live/status 200 in 85ms
+ GET /api/live/status 200 in 81ms
+ ✓ Compiled /api/admin/lives/[bvid] in 87ms (436 modules)
+ GET /api/admin/lives/BV1HbaG69EB6 200 in 401ms
+ ✓ Compiled /api/admin/lives/[bvid]/danmaku in 61ms (438 modules)
+ ✓ Compiled (440 modules)
+ GET /api/danmaku?senders=1&bvid=BV1HbaG69EB6 200 in 211ms
+ GET /api/admin/lives/BV1HbaG69EB6/danmaku?limit=200&offset=0 200 in 238ms
+ PATCH /api/admin/lives/BV1HbaG69EB6 200 in 16ms
+ GET /api/admin/lives 200 in 301ms
+ GET /api/admin/lives/BV1HbaG69EB6 200 in 301ms
+ GET /api/danmaku?senders=1&bvid=BV1HbaG69EB6 200 in 21ms
+ GET /api/admin/lives/BV1HbaG69EB6/danmaku?limit=200&offset=0 200 in 25ms
+ GET /api/live/status 200 in 11ms
+ GET /api/admin/monitor-status 200 in 16ms
+ GET /api/admin/lives/BV1akah6oEqX 200 in 231ms
+ GET /api/danmaku?senders=1&bvid=BV1akah6oEqX 200 in 8ms
+ GET /api/admin/lives/BV1akah6oEqX/danmaku?limit=200&offset=0 200 in 13ms
+ GET /api/live/status 200 in 161ms
+ PATCH /api/admin/lives/BV1akah6oEqX 200 in 12ms
+ GET /api/admin/lives 200 in 283ms
+ GET /api/admin/lives/BV1akah6oEqX 200 in 341ms
+ GET /api/danmaku?senders=1&bvid=BV1akah6oEqX 200 in 7ms
+ GET /api/admin/lives/BV1akah6oEqX/danmaku?limit=200&offset=0 200 in 12ms
+ GET /api/admin/lives/BV15Nh76QEjw 200 in 229ms
+ GET /api/danmaku?senders=1&bvid=BV15Nh76QEjw 200 in 9ms
+ GET /api/admin/lives/BV15Nh76QEjw/danmaku?limit=200&offset=0 200 in 15ms
+ GET /api/live/status 200 in 131ms
+ PATCH /api/admin/lives/BV15Nh76QEjw 200 in 13ms
+ GET /api/admin/lives 200 in 264ms
+ GET /api/admin/lives/BV15Nh76QEjw 200 in 323ms
+ GET /api/danmaku?senders=1&bvid=BV15Nh76QEjw 200 in 14ms
+ GET /api/admin/lives/BV15Nh76QEjw/danmaku?limit=200&offset=0 200 in 11ms
+ GET /api/live/status 200 in 7ms
+ GET /api/admin/monitor-status 200 in 9ms
+ GET /api/live/status 200 in 154ms
+ GET /api/live/status 200 in 106ms
+ GET /api/admin/lives/BV1sse466ES1 200 in 242ms
+ GET /api/danmaku?senders=1&bvid=BV1sse466ES1 200 in 8ms
+ GET /api/admin/lives/BV1sse466ES1/danmaku?limit=200&offset=0 200 in 14ms
+ PATCH /api/admin/lives/BV1sse466ES1 200 in 14ms
+ GET /api/admin/lives 200 in 321ms
+ GET /api/admin/lives/BV1sse466ES1 200 in 395ms
+ GET /api/danmaku?senders=1&bvid=BV1sse466ES1 200 in 11ms
+ GET /api/admin/lives/BV1sse466ES1/danmaku?limit=200&offset=0 200 in 21ms
+ GET /api/live/status 200 in 10ms
+ GET /api/admin/monitor-status 200 in 11ms
+ GET /api/live/status 200 in 125ms
+ GET /api/live/status 200 in 154ms
+ GET /api/live/status 200 in 8ms
+ GET /api/admin/monitor-status 200 in 10ms
+ GET /api/live/status 200 in 109ms
+ GET /api/live/status 200 in 95ms
+ ✓ Compiled /api/admin/lives/[bvid]/songs in 92ms (431 modules)
+ POST /api/admin/lives/BV1sse466ES1/songs 200 in 406ms
+ GET /api/admin/lives/BV1sse466ES1 200 in 247ms
+ GET /api/danmaku?senders=1&bvid=BV1sse466ES1 200 in 10ms
+ GET /api/admin/lives/BV1sse466ES1/danmaku?limit=200&offset=0 200 in 20ms
+ GET /api/live/status 200 in 10ms
+ GET /api/admin/monitor-status 200 in 13ms
+ POST /api/admin/lives/BV1sse466ES1/songs 200 in 11ms
+ GET /api/admin/lives/BV1sse466ES1 200 in 263ms
+ GET /api/danmaku?senders=1&bvid=BV1sse466ES1 200 in 7ms
+ GET /api/admin/lives/BV1sse466ES1/danmaku?limit=200&offset=0 200 in 13ms
+ GET /api/live/status 200 in 138ms
+ POST /api/admin/lives/BV1sse466ES1/songs 200 in 13ms
+ GET /api/admin/lives/BV1sse466ES1 200 in 262ms
+ GET /api/danmaku?senders=1&bvid=BV1sse466ES1 200 in 9ms
+ GET /api/admin/lives/BV1sse466ES1/danmaku?limit=200&offset=0 200 in 14ms
+ GET /api/live/status 200 in 140ms
+ GET /api/live/status 200 in 49ms
+ GET /api/admin/monitor-status 200 in 48ms
+ POST /api/admin/lives/BV1sse466ES1/songs 200 in 13ms
+ GET /api/admin/lives/BV1sse466ES1 200 in 257ms
+ GET /api/danmaku?senders=1&bvid=BV1sse466ES1 200 in 9ms
+ GET /api/admin/lives/BV1sse466ES1/danmaku?limit=200&offset=0 200 in 13ms
+ GET /api/live/status 200 in 169ms
+ GET /api/live/status 200 in 134ms
+ ✓ Compiled /api/admin/lives/[bvid]/songs/[idx] in 60ms (431 modules)
+ DELETE /api/admin/lives/BV1sse466ES1/songs/25 200 in 324ms
+ GET /api/admin/lives/BV1sse466ES1 200 in 226ms
+ GET /api/danmaku?senders=1&bvid=BV1sse466ES1 200 in 14ms
+ GET /api/admin/lives/BV1sse466ES1/danmaku?limit=200&offset=0 200 in 29ms
+ DELETE /api/admin/lives/BV1sse466ES1/songs/26 200 in 11ms
+ GET /api/admin/lives/BV1sse466ES1 200 in 268ms
+ GET /api/danmaku?senders=1&bvid=BV1sse466ES1 200 in 11ms
+ GET /api/admin/lives/BV1sse466ES1/danmaku?limit=200&offset=0 200 in 12ms
+ DELETE /api/admin/lives/BV1sse466ES1/songs/27 200 in 9ms
+ GET /api/admin/lives/BV1sse466ES1 200 in 240ms
+ GET /api/danmaku?senders=1&bvid=BV1sse466ES1 200 in 8ms
+ GET /api/admin/lives/BV1sse466ES1/danmaku?limit=200&offset=0 200 in 14ms
+ DELETE /api/admin/lives/BV1sse466ES1/songs/28 200 in 10ms
+ GET /api/admin/lives/BV1sse466ES1 200 in 248ms
+ GET /api/danmaku?senders=1&bvid=BV1sse466ES1 200 in 8ms
+ GET /api/admin/lives/BV1sse466ES1/danmaku?limit=200&offset=0 200 in 13ms
+ GET /api/admin/lives/BV11meE6QESn 200 in 223ms
+ GET /api/danmaku?senders=1&bvid=BV11meE6QESn 200 in 15ms
+ GET /api/admin/lives/BV11meE6QESn/danmaku?limit=200&offset=0 200 in 16ms
+ GET /api/live/status 200 in 12ms
+ GET /api/admin/monitor-status 200 in 17ms
+ GET /api/live/status 200 in 137ms
+ PATCH /api/admin/lives/BV11meE6QESn 200 in 9ms
+ ✓ Compiled /api/admin/lives in 42ms (433 modules)
+ GET /api/admin/lives 200 in 428ms
+ GET /api/admin/lives/BV11meE6QESn 200 in 469ms
+ GET /api/danmaku?senders=1&bvid=BV11meE6QESn 200 in 12ms
+ GET /api/admin/lives/BV11meE6QESn/danmaku?limit=200&offset=0 200 in 30ms
+ GET /api/admin/lives/BV1L5Y46WE6s 200 in 231ms
+ GET /api/danmaku?senders=1&bvid=BV1L5Y46WE6s 200 in 9ms
+ GET /api/admin/lives/BV1L5Y46WE6s/danmaku?limit=200&offset=0 200 in 13ms
+ GET /api/live/status 200 in 166ms
+ PATCH /api/admin/lives/BV1L5Y46WE6s 200 in 12ms
+ GET /api/admin/lives 200 in 264ms
+ GET /api/admin/lives/BV1L5Y46WE6s 200 in 312ms
+ GET /api/danmaku?senders=1&bvid=BV1L5Y46WE6s 200 in 7ms
+ GET /api/admin/lives/BV1L5Y46WE6s/danmaku?limit=200&offset=0 200 in 12ms
+ GET /api/live/status 200 in 8ms
+ GET /api/admin/monitor-status 200 in 11ms
+ GET /api/admin/lives/BV1Jwtq6yEkx 200 in 237ms
+ GET /api/danmaku?senders=1&bvid=BV1Jwtq6yEkx 200 in 9ms
+ GET /api/admin/lives/BV1Jwtq6yEkx/danmaku?limit=200&offset=0 200 in 13ms
+ PATCH /api/admin/lives/BV1Jwtq6yEkx 200 in 11ms
+ GET /api/admin/lives 200 in 260ms
+ GET /api/admin/lives/BV1Jwtq6yEkx 200 in 261ms
+ GET /api/danmaku?senders=1&bvid=BV1Jwtq6yEkx 200 in 11ms
+ GET /api/admin/lives/BV1Jwtq6yEkx/danmaku?limit=200&offset=0 200 in 11ms
+ GET /api/live/status 200 in 131ms
+ GET /api/live/status 200 in 131ms
+ GET /api/live/status 200 in 51ms
+ GET /api/admin/monitor-status 200 in 50ms
+ GET /api/live/status 200 in 142ms
+ GET /api/live/status 200 in 181ms
+ GET /api/live/status 200 in 51ms
+ GET /api/admin/monitor-status 200 in 49ms
+ GET /api/live/status 200 in 113ms
+ GET /api/admin/lives/BV1F8Nu6GEkH 200 in 234ms
+ GET /api/danmaku?senders=1&bvid=BV1F8Nu6GEkH 200 in 8ms
+ GET /api/admin/lives/BV1F8Nu6GEkH/danmaku?limit=200&offset=0 200 in 12ms
+ PATCH /api/admin/lives/BV1F8Nu6GEkH 200 in 12ms
+ GET /api/admin/lives 200 in 262ms
+ GET /api/admin/lives/BV1F8Nu6GEkH 200 in 321ms
+ GET /api/danmaku?senders=1&bvid=BV1F8Nu6GEkH 200 in 9ms
+ GET /api/admin/lives/BV1F8Nu6GEkH/danmaku?limit=200&offset=0 200 in 12ms
+ GET /api/live/status 200 in 143ms
+ GET /api/admin/lives/BV1JwNS6XEvP 200 in 228ms
+ GET /api/danmaku?senders=1&bvid=BV1JwNS6XEvP 200 in 9ms
+ GET /api/admin/lives/BV1JwNS6XEvP/danmaku?limit=200&offset=0 200 in 13ms
+ GET /api/live/status 200 in 6ms
+ GET /api/admin/monitor-status 200 in 8ms
+ PATCH /api/admin/lives/BV1JwNS6XEvP 200 in 12ms
+ GET /api/admin/lives 200 in 263ms
+ GET /api/admin/lives/BV1JwNS6XEvP 200 in 308ms
+ GET /api/danmaku?senders=1&bvid=BV1JwNS6XEvP 200 in 7ms
+ GET /api/admin/lives/BV1JwNS6XEvP/danmaku?limit=200&offset=0 200 in 11ms
+ GET /api/live/status 200 in 106ms
+ GET /api/admin/lives/BV1KK3J6cECQ 200 in 229ms
+ GET /api/danmaku?senders=1&bvid=BV1KK3J6cECQ 200 in 8ms
+ GET /api/admin/lives/BV1KK3J6cECQ/danmaku?limit=200&offset=0 200 in 12ms
+ GET /api/live/status 200 in 392ms
+ GET /api/admin/lives/BV1N83n6YEGi 200 in 230ms
+ GET /api/danmaku?senders=1&bvid=BV1N83n6YEGi 200 in 9ms
+ GET /api/admin/lives/BV1N83n6YEGi/danmaku?limit=200&offset=0 200 in 13ms
+ PATCH /api/admin/lives/BV1N83n6YEGi 200 in 12ms
+ GET /api/admin/lives 200 in 234ms
+ GET /api/admin/lives/BV1N83n6YEGi 200 in 387ms
+ GET /api/danmaku?senders=1&bvid=BV1N83n6YEGi 200 in 7ms
+ GET /api/admin/lives/BV1N83n6YEGi/danmaku?limit=200&offset=0 200 in 13ms
+ GET /api/live/status 200 in 12ms
+ GET /api/admin/monitor-status 200 in 9ms
+ GET /api/live/status 200 in 186ms
+ GET /api/live/status 200 in 134ms
+ GET /api/live/status 200 in 54ms
+ GET /api/admin/monitor-status 200 in 52ms
+ GET /api/live/status 200 in 172ms
+ GET /api/live/status 200 in 110ms
+ GET /api/live/status 200 in 50ms
+ GET /api/admin/monitor-status 200 in 47ms
+ GET /api/live/status 200 in 130ms
+ GET /api/live/status 200 in 136ms
+ GET /api/live/status 200 in 11ms
+ GET /api/admin/monitor-status 200 in 14ms
+ GET /api/live/status 200 in 148ms
+ GET /api/live/status 200 in 162ms
+ GET /api/live/status 200 in 7ms
+ GET /api/admin/monitor-status 200 in 9ms
+ GET /api/live/status 200 in 133ms
+ GET /api/live/status 200 in 138ms
+ GET /api/live/status 200 in 50ms
+ GET /api/admin/monitor-status 200 in 48ms
+ GET /api/live/status 200 in 57ms
+ GET /api/admin/monitor-status 200 in 60ms
+ GET /api/live/status 200 in 676ms
+ GET /admin 200 in 82ms
+ ✓ Compiled /api/characters in 96ms (369 modules)
+ ✓ Compiled (373 modules)
+ GET /api/admin/me 200 in 195ms
+ GET /api/admin/me 200 in 10ms
+ ✓ Compiled /api/admin/jobs in 77ms (430 modules)
+ GET /api/admin/jobs 200 in 184ms
+ GET /api/admin/jobs 200 in 9ms
+ GET /api/mascot/lines 200 in 454ms
+ GET /api/mascot/lines 200 in 464ms
+ GET /api/characters 200 in 465ms
+ GET /api/characters 200 in 466ms
+ ✓ Compiled /api/admin/job-runs in 71ms (432 modules)
+ GET /api/admin/job-runs?limit=30 200 in 136ms
+ GET /api/admin/job-runs?limit=30 200 in 6ms
+ GET /api/admin/jobs 200 in 18ms
+ GET /api/admin/job-runs?limit=30 200 in 4ms
+ GET /api/admin/jobs 200 in 5ms
+ GET /api/admin/job-runs?limit=30 200 in 4ms
+ GET /api/admin/jobs 200 in 5ms
+ GET /api/admin/job-runs?limit=30 200 in 6ms
+ ✓ Compiled /api/admin/works in 56ms (434 modules)
+ GET /api/admin/works 200 in 134ms
+ GET /api/admin/works 200 in 6ms
+ ✓ Compiled /api/admin/mascot-config in 59ms (436 modules)
+ ✓ Compiled (438 modules)
+ GET /api/admin/mascot-config 200 in 195ms
+ GET /api/admin/mascot-config 200 in 9ms
+ GET /api/admin/mascot 200 in 229ms
+ GET /api/admin/mascot 200 in 5ms
+ ✓ Compiled /api/admin/shop in 89ms (440 modules)
+ GET /api/admin/shop 200 in 173ms
+ GET /api/admin/shop 200 in 7ms
+ ✓ Compiled /api/admin/topic in 59ms (442 modules)
+ GET /api/admin/topic 200 in 140ms
+ GET /api/admin/topic 200 in 7ms
+ ✓ Compiled /api/admin/blocked-ups in 63ms (444 modules)
+ ✓ Compiled (446 modules)
+ GET /api/admin/blocked-ups 200 in 200ms
+ GET /api/admin/blocked-ups 200 in 5ms
+ GET /api/admin/clips?limit=50&offset=0 200 in 279ms
+ GET /api/admin/clips?limit=50&offset=0 200 in 49ms
+ ✓ Compiled /api/admin/live-rt in 91ms (448 modules)
+ ✓ Compiled (450 modules)
+ GET /api/live/status 200 in 325ms
+ GET /api/admin/monitor-status 200 in 346ms
+ GET /api/admin/monitor-status 200 in 5ms
+ GET /api/live/status 200 in 369ms
+ GET /api/admin/live-rt 200 in 498ms
+ GET /api/admin/live-rt 200 in 11ms
+ GET /api/admin/lives 200 in 599ms
+ GET /api/admin/lives 200 in 229ms
+ GET /api/live/status 200 in 92ms
+ GET /api/live/status 200 in 117ms
+ GET /api/live/status 200 in 56ms
+ GET /api/admin/monitor-status 200 in 54ms
+ GET /api/live/status 200 in 138ms
+ GET /api/live/status 200 in 87ms
+ GET /api/live/status 200 in 52ms
+ GET /api/admin/monitor-status 200 in 49ms
+ GET /api/live/status 200 in 113ms
+ GET /api/live/status 200 in 82ms
+ GET /api/live/status 200 in 50ms
+ GET /api/admin/monitor-status 200 in 48ms
+ GET /api/live/status 200 in 133ms
+ GET /api/live/status 200 in 458ms
+ GET /api/live/status 200 in 54ms
+ GET /api/admin/monitor-status 200 in 51ms
+ GET /api/live/status 200 in 314ms
+ GET /api/live/status 200 in 157ms
+ GET /api/live/status 200 in 52ms
+ GET /api/admin/monitor-status 200 in 49ms
+ GET /api/live/status 200 in 169ms
+ GET /api/live/status 200 in 55ms
+ GET /api/admin/monitor-status 200 in 57ms
+ GET /api/live/status 200 in 207ms
+ GET /api/live/status 200 in 116ms
+ GET /api/live/status 200 in 50ms
+ GET /api/admin/monitor-status 200 in 48ms
+ GET /api/live/status 200 in 111ms
+ GET /api/live/status 200 in 117ms
+ GET /api/live/status 200 in 10ms
+ GET /api/admin/monitor-status 200 in 8ms
+ GET /api/live/status 200 in 146ms
+ GET /api/live/status 200 in 155ms
+ GET /api/live/status 200 in 51ms
+ GET /api/admin/monitor-status 200 in 50ms
+ GET /api/live/status 200 in 58ms
+ GET /api/admin/monitor-status 200 in 53ms
+ GET /api/live/status 200 in 52ms
+ GET /api/admin/monitor-status 200 in 49ms
+ GET /api/live/status 200 in 155ms
+ GET /api/admin/monitor-status 200 in 7ms
+ GET /api/live/status 200 in 361ms
+ GET /api/live/status 200 in 271ms
+ GET /api/live/status 200 in 9ms
+ GET /api/admin/monitor-status 200 in 13ms
+ GET /api/live/status 200 in 753ms
+ GET /api/live/status 200 in 159ms
+ GET /api/live/status 200 in 9ms
+ GET /api/admin/monitor-status 200 in 9ms
+ GET /api/live/status 200 in 125ms
+ GET /api/live/status 200 in 172ms
+ ✓ Compiled /api/admin/lives/[bvid] in 89ms (369 modules)
+ GET /api/admin/lives/BV1sruv6eEnn 200 in 399ms
+ ✓ Compiled /api/admin/lives/[bvid]/danmaku in 44ms (371 modules)
+ ✓ Compiled (427 modules)
+ GET /api/danmaku?senders=1&bvid=BV1sruv6eEnn 200 in 224ms
+ GET /api/admin/lives/BV1sruv6eEnn/danmaku?limit=200&offset=0 200 in 253ms
+ GET /api/live/status 200 in 12ms
+ GET /api/admin/monitor-status 200 in 14ms
+ PATCH /api/admin/lives/BV1sruv6eEnn 200 in 16ms
+ ✓ Compiled /api/admin/lives in 53ms (429 modules)
+ GET /api/admin/lives/BV1sruv6eEnn 200 in 440ms
+ GET /api/danmaku?senders=1&bvid=BV1sruv6eEnn 200 in 12ms
+ GET /api/admin/lives/BV1sruv6eEnn/danmaku?limit=200&offset=0 200 in 37ms
+ GET /api/admin/lives 200 in 490ms
+ GET /api/live/status 200 in 195ms
+ GET /api/live/status 200 in 127ms
+ GET /api/live/status 200 in 52ms
+ GET /api/admin/monitor-status 200 in 53ms
+ GET /api/live/status 200 in 172ms
+ GET /api/live/status 200 in 122ms
+ GET /api/live/status 200 in 10ms
+ GET /api/admin/monitor-status 200 in 10ms
+ GET /api/live/status 200 in 159ms
+ GET /api/live/status 200 in 200ms
+ GET /api/live/status 200 in 21ms
+ GET /api/admin/monitor-status 200 in 9ms
+ GET / 200 in 169ms
+ ✓ Compiled /api/characters in 93ms (364 modules)
+ ✓ Compiled (366 modules)
+ GET /api/mascot/lines 200 in 304ms
+ GET /api/mascot/lines 200 in 309ms
+ GET /api/characters 200 in 314ms
+ GET /api/characters 200 in 314ms
+ ✓ Compiled /_not-found in 339ms (688 modules)
+ GET /live2d/lidousha/Hiyori.pose3.json 404 in 393ms
+ GET /live2d/lidousha/Hiyori.physics3.json 404 in 393ms
+ GET / 200 in 116ms
+ GET /api/mascot/lines 200 in 29ms
+ GET /api/characters 200 in 31ms
+ GET /api/mascot/lines 200 in 33ms
+ GET /api/characters 200 in 77ms
+ GET /live2d/lidousha/Hiyori.pose3.json 404 in 11ms
+ GET /live2d/lidousha/Hiyori.physics3.json 404 in 11ms
+ GET / 200 in 46ms
+ GET /api/mascot/lines 200 in 14ms
+ GET /api/characters 200 in 18ms
+ GET /api/characters 200 in 19ms
+ GET /api/mascot/lines 200 in 59ms
+ GET /live2d/lidousha/Hiyori.pose3.json 404 in 52ms
+ GET /live2d/lidousha/Hiyori.physics3.json 404 in 52ms
+ GET / 200 in 165ms
+ GET /api/mascot/lines 200 in 15ms
+ GET /api/characters 200 in 17ms
+ GET /api/characters 200 in 78ms
+ GET /api/mascot/lines 200 in 79ms
+ GET /live2d/lidousha/Hiyori.pose3.json 404 in 35ms
+ GET /live2d/lidousha/Hiyori.physics3.json 404 in 35ms

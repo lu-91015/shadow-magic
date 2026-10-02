@@ -99,7 +99,43 @@ function redToBlueBow(r, g, b) {
   return [nr, ng, nb];
 }
 
-// ---------- texture_00：头发银白 + 红丝带转蓝 ----------
+// 在脸部贴图上画「眼下星星」（李豆沙标志性细节：左眼下蓝色四角星）
+function drawCheekStar(data, width, height, ch) {
+  // 脸部圆形贴图在 atlas 左上角（椭圆范围，比例坐标）
+  const cx0 = 0.119, cy0 = 0.142, ra = 0.112, rb = 0.137; // 椭圆中心与半径（比例）
+  const cx = cx0 * width, cy = cy0 * height;
+  const a = ra * width, b = rb * height;
+  // 星星位置：椭圆内右下（=角色左眼下方脸颊）
+  const sx = cx + a * 0.46, sy = cy + b * 0.40;
+  const R = a * 0.16; // 星星大小
+  const p = 0.55; // 四角星凹度
+  const col = [116, 158, 232]; // 蓝星
+  const core = [232, 242, 255]; // 星心微亮
+  let n = 0;
+  const rOut = Math.ceil(R) + 2;
+  for (let dy = -rOut; dy <= rOut; dy++) {
+    for (let dx = -rOut; dx <= rOut; dx++) {
+      const adx = Math.abs(dx), ady = Math.abs(dy);
+      // 四角星距离场：|x|^p+|y|^p 归一化
+      const d = (Math.pow(adx, p) + Math.pow(ady, p)) / Math.pow(R, p);
+      if (d > 1.12) continue;
+      const x = Math.round(sx + dx), y = Math.round(sy + dy);
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+      const o = (y * width + x) * ch;
+      if (ch === 4 && data[o + 3] < 8) continue;
+      // 软边缘 + 星心提亮
+      const alpha = d < 0.92 ? 1 : clamp((1.12 - d) / 0.2, 0, 1);
+      const cc = d < 0.45 ? core : col;
+      data[o] = Math.round(data[o] * (1 - alpha) + cc[0] * alpha);
+      data[o + 1] = Math.round(data[o + 1] * (1 - alpha) + cc[1] * alpha);
+      data[o + 2] = Math.round(data[o + 2] * (1 - alpha) + cc[2] * alpha);
+      n++;
+    }
+  }
+  console.log(`  t0: cheek star ${n} px @ (${Math.round(sx)},${Math.round(sy)})`);
+}
+
+// ---------- texture_00：头发银白 + 红丝带转蓝 + 脸颊星星 ----------
 function recolorT0(data, width, height, ch) {
   let hair = 0, bow = 0;
   for (let i = 0; i < width * height; i++) {
@@ -126,6 +162,7 @@ function recolorT0(data, width, height, ch) {
       hair++;
     }
   }
+  drawCheekStar(data, width, height, ch);
   console.log(`  t0: hair ${hair} px, bow ${bow} px`);
 }
 

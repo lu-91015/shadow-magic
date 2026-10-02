@@ -120,21 +120,25 @@ export default function Mascot() {
         if (disposed || !canvasHost.current) return;
         // Cubism 4 需要 Ticker 注册
         if (Live2DModel.registerTicker) Live2DModel.registerTicker(PIXI.Ticker);
+        const CW = 280, CH = 440; // 画布加大，避免头部被裁
         const host = canvasHost.current;
         const app = new PIXI.Application({
-          width: 260,
-          height: 320,
+          width: CW,
+          height: CH,
           backgroundAlpha: 0,
           antialias: true,
         });
         host.appendChild(app.view as unknown as Node);
         const model = await Live2DModel.from(url, { autoInteract: false });
         if (disposed) return;
-        // 按容器缩放贴底
-        const base = Math.min(260 / model.width, 320 / model.height);
-        model.scale.set(base * (scale || 1));
-        model.x = 130;
-        model.y = 320;
+        // 按容器缩放贴底，且保证不超出画布（后台 scale 只是偏好，超界时收敛）
+        const base = Math.min(CW / model.width, CH / model.height);
+        let s = base * (scale || 1);
+        if (model.height * s > CH * 0.98) s = (CH * 0.98) / model.height;
+        if (model.width * s > CW * 0.98) s = Math.min(s, (CW * 0.98) / model.width);
+        model.scale.set(s);
+        model.x = CW / 2;
+        model.y = CH;
         model.anchor.set(0.5, 1);
         app.stage.addChild(model);
         modelRef.current = model;
