@@ -1948,6 +1948,25 @@ export async function querySongFrequency(): Promise<
   return rows.map((r) => ({ title: r.title, count: Number(r.count) }));
 }
 
+// 全站歌曲出现频次（按时间窗，用于唱歌频率统计页）
+export async function querySongFrequencyWindowed(
+  days: number | null, // null = 全部
+): Promise<{ title: string; count: number }[]> {
+  await ensureReady();
+  const cond =
+    days && days > 0
+      ? `AND s.start_time >= ${(Date.now() / 1000 - days * 86400).toFixed(0)}`
+      : '';
+  const { rows } = await getPool().query<{ title: string; count: string }>(
+    `SELECT l.title, COUNT(*)::text AS count
+     FROM live_song l
+     JOIN live_session s ON s.id = l.bvid
+     WHERE COALESCE(l.excluded,false)=false ${cond}
+     GROUP BY l.title ORDER BY COUNT(*) DESC, l.title LIMIT 200`,
+  );
+  return rows.map((r) => ({ title: r.title, count: Number(r.count) }));
+}
+
 // 已人工核对（songs_override=true）场次中唱歌总次数（首页统计）
 export async function queryVerifiedSongCount(): Promise<number> {
   await ensureReady();

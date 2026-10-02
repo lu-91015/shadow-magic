@@ -136,6 +136,14 @@ async function HomeScreens() {
                 <CountUp value={verifiedSongs} />
               </div>
               <div className="mt-1 text-sm text-white/50">已核对唱过的歌（次）</div>
+              <div className="mt-2">
+                <Link
+                  href="/song-freq"
+                  className="rounded-full border border-white/15 bg-white/10 px-4 py-1 text-xs text-white/75 backdrop-blur-md transition hover:bg-white/20"
+                >
+                  📊 唱歌频率统计
+                </Link>
+              </div>
             </div>
           </div>
 
