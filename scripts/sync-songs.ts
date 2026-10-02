@@ -33,9 +33,12 @@ if (fs.existsSync(envFile))
 const LIMIT = Number(process.env.LIMIT ?? 0);
 const FORCE = process.env.FORCE === '1';
 const LOCAL_FFMPEG = path.join(process.cwd(), 'tools', 'ffmpeg', 'bin', 'ffmpeg.exe');
-export const FFMPEG = fs.existsSync(LOCAL_FFMPEG)
-  ? LOCAL_FFMPEG
-  : process.env.FFMPEG_BIN || 'ffmpeg';
+// 仅 Windows 使用仓库内的 ffmpeg.exe；Linux 服务器使用系统 ffmpeg（已在 /usr/local/bin），
+// 否则会被一并部署过来的 .exe 误选导致 exit 126。
+export const FFMPEG =
+  process.platform === 'win32' && fs.existsSync(LOCAL_FFMPEG)
+    ? LOCAL_FFMPEG
+    : process.env.FFMPEG_BIN || 'ffmpeg';
 // PaddleOCR 运行在 .venv（Python 3.11）中；ocr_songlist.py 负责整帧检测+识别
 const VENV_PY = path.join(process.cwd(), '.venv', 'Scripts', 'python.exe');
 export const PYTHON = fs.existsSync(VENV_PY) ? VENV_PY : process.env.PYTHON_BIN || 'python3';
