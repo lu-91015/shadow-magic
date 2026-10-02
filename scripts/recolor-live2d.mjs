@@ -270,8 +270,14 @@ function recolorT1(data, width, height, ch) {
       }
       continue;
     }
-    // 米色衣服（含袖子阴影）：b/r 判别，区分于皮肤
-    if (h >= 24 && h <= 62 && s >= 0.10 && s <= 0.55 && v >= 0.5 && br < 0.845) {
+    // 米色开衫/袖子 → 白色：排除大腿与小腿皮肤矩形区（其余米色都是衣服）
+    const ax = i % width, ay = Math.floor(i / width);
+    const inLegs =
+      (ax >= 620 && ax < 1230 && ay >= 20 && ay < 745) ||   // 大腿两块
+      (ax >= 820 && ax < 1310 && ay >= 745 && ay < 1690);   // 小腿（过膝袜上方的皮肤）
+    if (
+      !inLegs && h >= 24 && h <= 62 && s >= 0.10 && s <= 0.55 && v >= 0.5 && br < 0.845
+    ) {
       const c = beigeToWhiteTop(r, g, b);
       data[o] = Math.round(c[0]); data[o + 1] = Math.round(c[1]); data[o + 2] = Math.round(c[2]);
       top++;

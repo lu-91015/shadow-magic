@@ -852,3 +852,24 @@
  GET /api/mascot/lines 200 in 24ms
  GET /api/characters 200 in 28ms
  GET /api/characters 200 in 26ms
+ ✓ Compiled /api/mascot/lines in 248ms (653 modules)
+ ✓ Compiled in 0ms (364 modules)
+ GET /api/mascot/lines 200 in 807ms
+ ✓ Compiled in 176ms (683 modules)
+ GET /api/mascot/lines 200 in 128ms
+ ✓ Compiled in 131ms (683 modules)
+ GET / 500 in 243ms
+ ✓ Compiled in 143ms (683 modules)
+ GET / 500 in 209ms
+ ✓ Compiled in 136ms (683 modules)
+ GET / 500 in 197ms
+ ✓ Compiled in 140ms (653 modules)
+ GET / 200 in 282ms
+ ✓ Compiled /api/mascot/lines in 45ms (364 modules)
+ GET /api/mascot/lines 200 in 963ms
+ GET /api/mascot/lines 200 in 1030ms
+ ✓ Compiled in 163ms (683 modules)
+ GET /api/mascot/lines 200 in 163ms
+ GET /api/mascot/lines 200 in 166ms
+ ✓ Compiled in 172ms (683 modules)
+ GET /api/mascot/lines 200 in 143ms
