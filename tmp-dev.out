@@ -29,3 +29,87 @@
  ✓ Compiled /tracks in 275ms (622 modules)
  ✓ Compiled /admin in 288ms (633 modules)
  ✓ Compiled /middleware in 205ms (73 modules)
+ ✓ Compiled /api/admin/me in 81ms (361 modules)
+ GET /api/admin/me 200 in 491ms
+ GET /api/admin/me 200 in 8ms
+ ✓ Compiled /api/admin/jobs in 259ms (419 modules)
+ GET /api/admin/jobs 200 in 480ms
+ GET /api/admin/jobs 200 in 15ms
+ ✓ Compiled /api/admin/job-runs in 63ms (421 modules)
+ GET /api/admin/job-runs?limit=30 200 in 148ms
+ GET /api/admin/job-runs?limit=30 200 in 12ms
+ ✓ Compiled /api/admin/live-rt in 62ms (423 modules)
+ ✓ Compiled (429 modules)
+ GET /api/admin/monitor-status 200 in 346ms
+ GET /api/admin/live-rt 200 in 357ms
+ GET /api/admin/monitor-status 200 in 11ms
+ GET /api/admin/live-rt 200 in 14ms
+ GET /api/live/status 200 in 467ms
+ GET /api/admin/lives 200 in 488ms
+ GET /api/live/status 200 in 520ms
+ GET /api/admin/lives 200 in 217ms
+ GET /api/live/status 200 in 157ms
+ GET /api/live/status 200 in 211ms
+ GET /api/live/status 200 in 18ms
+ GET /api/admin/monitor-status 200 in 12ms
+ GET /api/live/status 200 in 128ms
+ GET /api/live/status 200 in 285ms
+ ✓ Compiled /api/admin/lives/[bvid] in 71ms (431 modules)
+ GET /api/admin/lives/BV1pvtW6yEM2 200 in 573ms
+ ✓ Compiled /api/admin/lives/[bvid]/danmaku in 68ms (433 modules)
+ ✓ Compiled (435 modules)
+ GET /api/danmaku?senders=1&bvid=BV1pvtW6yEM2 200 in 273ms
+ GET /api/admin/lives/BV1pvtW6yEM2/danmaku?limit=200&offset=0 200 in 429ms
+ ✓ Compiled in 369ms (752 modules)
+ PATCH /api/admin/lives/BV1pvtW6yEM2 200 in 61ms
+ GET /api/admin/lives 200 in 265ms
+ GET /api/admin/lives/BV1pvtW6yEM2 200 in 311ms
+ GET /api/danmaku?senders=1&bvid=BV1pvtW6yEM2 200 in 9ms
+ GET /api/admin/lives/BV1pvtW6yEM2/danmaku?limit=200&offset=0 200 in 28ms
+ ✓ Compiled in 168ms (752 modules)
+ GET /api/live/status 200 in 59ms
+ GET /api/admin/monitor-status 200 in 82ms
+ ✓ Compiled in 143ms (752 modules)
+ ✓ Compiled in 85ms (317 modules)
+ ✓ Compiled in 82ms (317 modules)
+ GET /api/live/status 200 in 195ms
+ ✓ Compiled in 159ms (743 modules)
+ ✓ Compiled in 168ms (743 modules)
+ ✓ Compiled in 165ms (743 modules)
+ ✓ Compiled in 163ms (745 modules)
+ GET /api/live/status 200 in 322ms
+ ✓ Compiled in 109ms (316 modules)
+ ✓ Compiled in 360ms (798 modules)
+ GET /api/live/status 200 in 70ms
+ GET /api/admin/monitor-status 200 in 106ms
+ GET /api/admin/lives/BV1hogW6mEJo 200 in 256ms
+ GET /api/danmaku?senders=1&bvid=BV1hogW6mEJo 200 in 15ms
+ GET /api/admin/lives/BV1hogW6mEJo/danmaku?limit=200&offset=0 200 in 31ms
+ PATCH /api/admin/lives/BV1hogW6mEJo 200 in 13ms
+ GET /api/admin/lives 200 in 269ms
+ GET /api/admin/lives/BV1hogW6mEJo 200 in 298ms
+ GET /api/danmaku?senders=1&bvid=BV1hogW6mEJo 200 in 9ms
+ GET /api/admin/lives/BV1hogW6mEJo/danmaku?limit=200&offset=0 200 in 15ms
+ GET /api/admin/lives/BV1Ps836DEZA 200 in 223ms
+ GET /api/danmaku?senders=1&bvid=BV1Ps836DEZA 200 in 12ms
+ GET /api/admin/lives/BV1Ps836DEZA/danmaku?limit=200&offset=0 200 in 15ms
+ GET /api/live/status 200 in 131ms
+ PATCH /api/admin/lives/BV1Ps836DEZA 200 in 10ms
+ GET /api/admin/lives 200 in 271ms
+ GET /api/admin/lives/BV1Ps836DEZA 200 in 287ms
+ GET /api/danmaku?senders=1&bvid=BV1Ps836DEZA 200 in 10ms
+ GET /api/admin/lives/BV1Ps836DEZA/danmaku?limit=200&offset=0 200 in 13ms
+ GET /api/live/status 200 in 128ms
+ GET /api/admin/lives/BV1aYuz6xEnk 200 in 231ms
+ GET /api/danmaku?senders=1&bvid=BV1aYuz6xEnk 200 in 13ms
+ GET /api/admin/lives/BV1aYuz6xEnk/danmaku?limit=200&offset=0 200 in 18ms
+ GET /tracks 200 in 158ms
+ GET / 200 in 126ms
+ PATCH /api/admin/lives/BV1aYuz6xEnk 200 in 10ms
+ GET /api/admin/lives 200 in 326ms
+ GET /api/admin/lives/BV1aYuz6xEnk 200 in 329ms
+ GET /api/danmaku?senders=1&bvid=BV1aYuz6xEnk 200 in 10ms
+ GET /api/admin/lives/BV1aYuz6xEnk/danmaku?limit=200&offset=0 200 in 14ms
+ GET /api/live/status 200 in 8ms
+ GET /api/admin/monitor-status 200 in 8ms
+ GET /api/live/status 200 in 85ms
