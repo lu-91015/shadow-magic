@@ -1,0 +1,6 @@
+BV BV1L5Y46WE6s ear 命中 2 首:
+  13: Koi, Hajimemashita.  |  ear@150s =LOVE [shazam]
+  14: ���q  |  ear@2820s NILFRUITS [shazam]
+--- raw bytes(hex) ---
+  13: 4b6f692c2048616a696d656d6173686974612e
+  14: efbfbdefbfbdefbfbd71

@@ -1299,6 +1299,8 @@ function LivesTab() {
   const [songs, setSongs] = useState<any[]>([]);
   const [effective, setEffective] = useState<any[]>([]);
   const [newSong, setNewSong] = useState('');
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [editTitle, setEditTitle] = useState('');
   const [edit, setEdit] = useState<any>({});
   const [dm, setDm] = useState<any[]>([]);
   const [dmTotal, setDmTotal] = useState(0);
@@ -1516,6 +1518,19 @@ function LivesTab() {
   }
   async function delSong(s: any) {
     await api(`/api/admin/lives/${open.bvid}/songs/${s.idx}`, { method: 'DELETE' });
+    openDetail(open.bvid);
+  }
+  async function renameSong(s: any) {
+    const title = editTitle.trim();
+    if (!title) {
+      setEditIdx(null);
+      return;
+    }
+    await api(`/api/admin/lives/${open.bvid}/songs/${s.idx}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    });
+    setEditIdx(null);
     openDetail(open.bvid);
   }
 
@@ -2138,19 +2153,55 @@ function LivesTab() {
                     }`}
                   >
                     <span>
-                      <span className="text-white/40">#{s.idx}</span> {s.title}
+                      <span className="text-white/40">#{s.idx}</span>{' '}
+                      {editIdx === s.idx ? (
+                        <input
+                          autoFocus
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') renameSong(s);
+                            if (e.key === 'Escape') setEditIdx(null);
+                          }}
+                          className="w-56 rounded border border-emerald-500/40 bg-black/60 px-2 py-0.5 text-white"
+                        />
+                      ) : (
+                        s.title
+                      )}
                       <span className="ml-2 text-xs text-white/40">
                         {s.source === 'manual' ? '手动' : '自动'}
                       </span>
                     </span>
                     <span className="space-x-2">
-                      <button onClick={() => toggleExclude(s)} className="text-amber-300 hover:underline">
-                        {s.excluded ? '恢复' : '去垃圾'}
-                      </button>
-                      {s.source === 'manual' && (
-                        <button onClick={() => delSong(s)} className="text-red-300 hover:underline">
-                          删除
-                        </button>
+                      {editIdx === s.idx ? (
+                        <>
+                          <button onClick={() => renameSong(s)} className="text-emerald-300 hover:underline">
+                            保存
+                          </button>
+                          <button onClick={() => setEditIdx(null)} className="text-white/50 hover:underline">
+                            取消
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => {
+                              setEditIdx(s.idx);
+                              setEditTitle(s.title || '');
+                            }}
+                            className="text-sky-300 hover:underline"
+                          >
+                            改名
+                          </button>
+                          <button onClick={() => toggleExclude(s)} className="text-amber-300 hover:underline">
+                            {s.excluded ? '恢复' : '去垃圾'}
+                          </button>
+                          {s.source === 'manual' && (
+                            <button onClick={() => delSong(s)} className="text-red-300 hover:underline">
+                              删除
+                            </button>
+                          )}
+                        </>
                       )}
                     </span>
                   </li>

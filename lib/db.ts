@@ -3325,6 +3325,19 @@ export async function setLiveSongExcluded(
   );
 }
 
+// 手动修正歌名（保留原来源与 raw_text，仅更新标题）
+export async function updateLiveSongTitle(
+  bvid: string,
+  idx: number,
+  title: string,
+): Promise<void> {
+  await ensureReady();
+  await getPool().query(
+    'UPDATE live_song SET title=$3 WHERE bvid=$1 AND idx=$2',
+    [bvid, idx, title],
+  );
+}
+
 export async function addManualSong(bvid: string, title: string): Promise<void> {
   await ensureReady();
   const p = getPool();
