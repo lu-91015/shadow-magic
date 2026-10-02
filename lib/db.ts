@@ -1925,7 +1925,7 @@ export async function querySongStreams(): Promise<
     `SELECT s.id AS bvid, s.title AS title,
             COALESCE(c.cnt,0)::int AS songcount, s.songs_checked_at AS checkedat
      FROM live_session s
-     LEFT JOIN (SELECT bvid, COUNT(*) AS cnt FROM live_song GROUP BY bvid) c
+     LEFT JOIN (SELECT bvid, COUNT(*) AS cnt FROM live_song WHERE COALESCE(excluded,false)=false GROUP BY bvid) c
        ON c.bvid = s.id
      ORDER BY s.start_time DESC`,
   );
@@ -1943,7 +1943,7 @@ export async function querySongFrequency(): Promise<
 > {
   await ensureReady();
   const { rows } = await getPool().query<{ title: string; count: string }>(
-    `SELECT title, COUNT(*)::int AS count FROM live_song GROUP BY title ORDER BY count DESC, title`,
+    `SELECT title, COUNT(*)::int AS count FROM live_song WHERE COALESCE(excluded,false)=false GROUP BY title ORDER BY count DESC, title`,
   );
   return rows.map((r) => ({ title: r.title, count: Number(r.count) }));
 }
@@ -3268,7 +3268,7 @@ export async function queryLiveSessionsAdmin(): Promise<LiveAdminRow[]> {
             rt.gift_coin AS rt_gift_coin, rt.interact_count AS rt_interact,
             rt.danmaku_count AS rt_danmaku
      FROM live_session s
-     LEFT JOIN (SELECT bvid, COUNT(*) AS cnt FROM live_song GROUP BY bvid) c ON c.bvid = s.id
+     LEFT JOIN (SELECT bvid, COUNT(*) AS cnt FROM live_song WHERE COALESCE(excluded,false)=false GROUP BY bvid) c ON c.bvid = s.id
      LEFT JOIN (SELECT bvid, COUNT(*) AS cnt FROM live_danmaku GROUP BY bvid) d ON d.bvid = s.id
      LEFT JOIN LATERAL (
        SELECT online_peak, sc_count, gift_count, gift_coin, interact_count, danmaku_count

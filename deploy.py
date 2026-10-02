@@ -54,8 +54,9 @@ def main():
         c.close()
         return
 
-    # 优先增量 bundle；若基准 commit 不在本地历史（分叉/首次），退回全量
-    rc, _, err = run_local(f'git bundle create "{BUNDLE}" {base}..{local}')
+    # 优先增量 bundle（main --not base：bundle 头需有 ref 名，纯 A..B 语法会报 empty bundle）；
+    # 若基准 commit 不在本地历史（分叉/首次），退回全量
+    rc, _, err = run_local(f'git bundle create "{BUNDLE}" main --not {base}')
     if rc != 0:
         print("增量 bundle 失败，改用全量：", err)
         rc, _, err = run_local(f'git bundle create "{BUNDLE}" main')
