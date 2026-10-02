@@ -11,7 +11,8 @@ out/
 .env*.local
 
 # data & runtime artifacts
-data/
+data/*
+!data/known-songs.json
 logs/
 public/dynamics/
 public/characters/*
