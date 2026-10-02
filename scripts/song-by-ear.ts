@@ -40,6 +40,8 @@ const OFFSET_BASE = Number(process.env.OFFSET_BASE ?? 0); // 采样基准偏移�
 const WINDOW = 30; // 弹幕密度统计窗口（秒）
 const GRID_SEC = Number(process.env.GRID_SEC ?? 480); // 兜底网格采样间隔（秒）：保证整场均匀覆盖，命中安静的唱歌段
 const MAX_SEG = Number(process.env.MAX_SEG ?? 60); // 单场最多识别段落上限
+const BILI_GAP = Number(process.env.BILI_GAP ?? 1000); // 每次向 B站 CDN 抽取音频前的间隔（避风控）
+const VIDEO_GAP = Number(process.env.VIDEO_GAP ?? 3000); // 每场之间的间隔（避 playurl 风控）
 const AUDIO_ID = path.join(process.cwd(), 'scripts', 'audio_id.py');
 const LOCAL_FFMPEG_DIR = path.join(process.cwd(), 'tools', 'ffmpeg', 'bin');
 // pydub（shazamio 依赖）需要 ffmpeg 在 PATH：取 FFMPEG 所在目录；若只是裸命令（如 'ffmpeg'），用 /usr/local/bin
@@ -186,6 +188,7 @@ async function extractWithRetry(
       continue;
     }
     try {
+      await sleep(BILI_GAP); // 向 B站 CDN 抽取前间隔，避免风控
       await runFfmpegExtract(url, t, wav);
       return true;
     } catch (e) {
@@ -372,10 +375,13 @@ export async function runEarAll(limit: number): Promise<string> {
     [limit],
   );
   let total = 0;
-  for (const r of rows) total += await processBvid(r.id).catch((e) => {
-    console.warn(`    异常：${(e as Error).message}`);
-    return 0;
-  });
+  for (const r of rows) {
+    total += await processBvid(r.id).catch((e) => {
+      console.warn(`    异常：${(e as Error).message}`);
+      return 0;
+    });
+    await sleep(VIDEO_GAP); // 每场之间间隔，避免 B站 playurl 风控
+  }
   return `听歌识曲完成：${rows.length} 场，新增 ${total} 首`;
 }
 
