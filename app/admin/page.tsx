@@ -1919,6 +1919,7 @@ function LivesTab() {
                 <th className="px-2 text-right whitespace-nowrap" title="实时监控采集：礼物事件数">礼物</th>
                 <th className="px-2 text-right whitespace-nowrap" title="实时监控采集：礼物币(流水)">流水</th>
                 <th className="px-2 text-right whitespace-nowrap" title="实时监控采集：互动(进入/关注等)">互动</th>
+                <th className="px-2 whitespace-nowrap" title="歌单已人工核对，自动识曲/同步不再改写">核对</th>
                 <th className="px-2"></th>
               </tr>
             </thead>
@@ -1968,6 +1969,29 @@ function LivesTab() {
                   <td className="px-2 text-right tabular-nums">{nf(l.rtGift)}</td>
                   <td className="px-2 text-right tabular-nums">{nf(l.rtGiftCoin)}</td>
                   <td className="px-2 text-right tabular-nums">{nf(l.rtInteract)}</td>
+                  <td className="px-2 whitespace-nowrap">
+                    {l.songsOverride ? (
+                      <span className="text-emerald-300" title="歌单已人工核对，自动流程不再改写">✅ 已核对</span>
+                    ) : (
+                      <button
+                        onClick={async () => {
+                          const r = await api(`/api/admin/lives/${l.bvid}/songs-override`, {
+                            method: 'POST',
+                            body: JSON.stringify({}),
+                          });
+                          if (r.ok) {
+                            setList((ls: any[]) => ls.map((x) => (x.bvid === l.bvid ? { ...x, songsOverride: true } : x)));
+                          } else {
+                            alert('标记失败，请重试');
+                          }
+                        }}
+                        className="text-amber-300 hover:underline"
+                        title="标记这场歌单已人工核对，自动识曲/同步将不再改写"
+                      >
+                        标记核对
+                      </button>
+                    )}
+                  </td>
                   <td className="px-2">
                     <button onClick={() => openDetail(l.bvid)} className="text-sky-300 hover:underline">
                       管理
