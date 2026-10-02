@@ -27,24 +27,9 @@ const MORE = [
 export default function SiteNav() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const moreRef = useRef<HTMLDivElement>(null);
 
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
-
-  // 点击外部 / 路由变化后关闭「更多」
-  useEffect(() => {
-    setMoreOpen(false);
-  }, [pathname]);
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (moreRef.current && !moreRef.current.contains(e.target as Node))
-        setMoreOpen(false);
-    };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, []);
 
   return (
     <header className="fixed top-0 inset-x-0 z-50 bg-ink-900/70 backdrop-blur-md border-b border-white/10">
@@ -66,36 +51,6 @@ export default function SiteNav() {
               {n.label}
             </Link>
           ))}
-
-          {/* 更多下拉 */}
-          <div className="relative" ref={moreRef}>
-            <button
-              onClick={() => setMoreOpen((v) => !v)}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-full transition ${
-                MORE.some((m) => isActive(m.href))
-                  ? 'bg-white/10 text-brand-100'
-                  : 'text-white/60 hover:text-brand-100 hover:bg-white/5'
-              }`}
-              aria-expanded={moreOpen}
-            >
-              更多 <span className="text-[10px]">▾</span>
-            </button>
-            {moreOpen && (
-              <div className="absolute right-0 top-full mt-1 w-44 rounded-xl border border-white/10 bg-ink-900/95 py-1 shadow-xl backdrop-blur">
-                {MORE.map((m) => (
-                  <Link
-                    key={m.href}
-                    href={m.href}
-                    className={`block px-3 py-2 text-sm transition hover:bg-white/10 ${
-                      isActive(m.href) ? 'text-brand-100' : 'text-white/70'
-                    }`}
-                  >
-                    {m.label}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
 
           <a
             href={SPACE_URL}
