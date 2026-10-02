@@ -270,12 +270,16 @@ async function recognizeSegment(
 
 async function processBvid(bvid: string): Promise<number> {
   const p = getPool();
-  const sq = await p.query<{ duration_sec: string; title: string | null }>(
-    'SELECT duration_sec, title FROM live_session WHERE id = $1',
+  const sq = await p.query<{ duration_sec: string; title: string | null; songs_override: boolean }>(
+    'SELECT duration_sec, title, COALESCE(songs_override,false) AS songs_override FROM live_session WHERE id = $1',
     [bvid],
   );
   const duration = Number(sq.rows[0]?.duration_sec ?? 0);
   console.log(`→ ${bvid} ${sq.rows[0]?.title ?? ''} (${duration}s)`);
+  if (sq.rows[0]?.songs_override) {
+    console.log('    已人工核对（songs_override），跳过');
+    return 0;
+  }
   if (duration < 120) {
     console.log('    时长过短，跳过');
     return 0;
@@ -371,6 +375,7 @@ export async function runEarAll(limit: number): Promise<string> {
     `SELECT s.id FROM live_session s
      LEFT JOIN song_ear_done d ON d.bvid = s.id
      WHERE d.bvid IS NULL AND s.duration_sec >= 120
+       AND COALESCE(s.songs_override,false) = false
      ORDER BY s.start_time DESC LIMIT $1`,
     [limit],
   );

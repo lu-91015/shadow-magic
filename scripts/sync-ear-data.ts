@@ -31,6 +31,13 @@ interface Row {
   created_at: string | null;
 }
 
+async function fetchOverrideBvids(c: pg.Pool): Promise<Set<string>> {
+  const { rows } = await c.query<{ id: string }>(
+    "SELECT id FROM live_session WHERE COALESCE(songs_override,false)=true",
+  );
+  return new Set(rows.map((r) => r.id));
+}
+
 async function fetchRows(c: pg.Pool): Promise<Map<string, Row[]>> {
   const { rows } = await c.query<Row>(
     `SELECT bvid, idx, title, COALESCE(source,'auto') AS source,
@@ -75,12 +82,17 @@ async function main() {
   const rc = new pg.Pool({ connectionString: REMOTE });
   const local = await fetchRows(lc);
   const remote = await fetchRows(rc);
+  const localOverride = await fetchOverrideBvids(lc);
+  const remoteOverride = await fetchOverrideBvids(rc);
   const bvids = new Set<string>([...local.keys(), ...remote.keys()]);
   let addedToLocal = 0;
   let addedToRemote = 0;
   for (const bvid of bvids) {
     const lb = pickBest(local.get(bvid) ?? []);
     const rb = pickBest(remote.get(bvid) ?? []);
+    // 已人工核对的场次不再改动
+    if (localOverride.has(bvid)) rb.clear();
+    if (remoteOverride.has(bvid)) lb.clear();
     // 需要补到本地（远端有、本地无）
     const toLocal = [...rb.keys()].filter((k) => !lb.has(k));
     // 需要补到远端（本地有、远端无）
