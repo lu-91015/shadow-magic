@@ -1,0 +1,31 @@
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3000
+  - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 3.3s
+ ○ Compiling / ...
+ ✓ Compiled / in 7.4s (620 modules)
+ GET / 200 in 7725ms
+ ✓ Compiled /song-freq in 415ms (626 modules)
+ GET /song-freq 200 in 518ms
+ GET / 200 in 203ms
+ ✓ Compiled /_not-found in 94ms (615 modules)
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 128ms
+ ✓ Compiled /api/characters in 217ms (647 modules)
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 588ms
+ GET /api/mascot/lines 200 in 764ms
+ GET /api/mascot/lines 200 in 770ms
+ GET /api/characters 200 in 774ms
+ GET /api/characters 200 in 776ms
+ ✓ Compiled /api/song-freq in 39ms (351 modules)
+ GET /api/song-freq?days=30 200 in 117ms
+ GET /api/song-freq?days=30 200 in 154ms
+ GET /api/song-freq?days=90 200 in 11ms
+ GET /api/song-freq?days=all 200 in 10ms
+ GET /api/song-freq?days=90 200 in 9ms
+ GET /api/song-freq?days=all 200 in 14ms
+ GET /api/song-freq?days=90 200 in 8ms
+ ✓ Compiled /tracks in 275ms (622 modules)
+ ✓ Compiled /admin in 288ms (633 modules)
+ ✓ Compiled /middleware in 205ms (73 modules)

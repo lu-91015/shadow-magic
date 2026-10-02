@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { LiveReplayLite, LiveDayRow, WorkRow } from '@/lib/db';
+import SongFreq from '@/components/SongFreq';
 
 import { LIVE_CATEGORIES, CATEGORY_LABEL, CATEGORY_CHIP } from '@/lib/liveCategory';
 
@@ -31,7 +32,7 @@ function cstDate(ts: number): string {
   }).format(new Date(ts * 1000));
 }
 
-type Tab = 'replays' | 'heat' | 'works';
+type Tab = 'replays' | 'heat' | 'songs' | 'works';
 
 // 热力图色阶（青→墨绿，同参考站）
 const HEAT_COLORS = [
@@ -141,6 +142,7 @@ export default function TracksExplorer({
             ['works', '🎮 豆沙作品'],
             ['replays', '📼 录播回放'],
             ['heat', '🔥 直播热力'],
+            ['songs', '🎵 唱歌频率'],
           ] as [Tab, string][]
         ).map(([id, label]) => (
           <button
@@ -159,6 +161,13 @@ export default function TracksExplorer({
 
       {/* 录播回放 */}
       {tab === 'replays' && <ReplaysTab replays={replays} />}
+
+      {/* 唱歌频率 */}
+      {tab === 'songs' && (
+        <div className="glass !bg-ink-900/50 p-5">
+          <SongFreq />
+        </div>
+      )}
 
       {/* 直播热力 */}
       {tab === 'heat' && (
