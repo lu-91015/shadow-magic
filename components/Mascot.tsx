@@ -142,6 +142,18 @@ export default function Mascot() {
         model.anchor.set(0.5, 1);
         app.stage.addChild(model);
         modelRef.current = model;
+        // 熊猫头麦克风：作为模型子节点，跟随整体变换（呼吸/摆动），定位于右手附近
+        try {
+          const uw = model.width / s, uh = model.height / s; // 未缩放的模型本地尺寸
+          const mic = new PIXI.Sprite(PIXI.Texture.from('/live2d/lidousha/mic.png'));
+          mic.anchor.set(0.5, 0.15);
+          mic.scale.set((uh * 0.15) / 200); // 屏幕高 ≈ 模型高 15%
+          mic.position.set(uw * 0.655, uh * 0.52); // 压在裙边、手的高度
+          mic.rotation = -0.3;
+          model.addChild(mic);
+        } catch (micErr) {
+          console.warn('[Mascot] mic sprite 失败：', micErr);
+        }
         setModelOk(true);
       } catch (err) {
         // 模型加载失败（未放文件 / 核心脚本不可用 / 版本不兼容）→ 回退立牌

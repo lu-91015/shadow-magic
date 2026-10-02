@@ -6,10 +6,10 @@
 			"Lidousha.2048/texture_00.png",
 			"Lidousha.2048/texture_01.png"
 		],
-		"Physics": "Hiyori.physics3.json",
-		"Pose": "Hiyori.pose3.json",
-		"UserData": "Hiyori.userdata3.json",
-		"DisplayInfo": "Hiyori.cdi3.json",
+		"Physics": "Lidousha.physics3.json",
+		"Pose": "Lidousha.pose3.json",
+		"UserData": "Lidousha.userdata3.json",
+		"DisplayInfo": "Lidousha.cdi3.json",
 		"Motions": {
 			"Idle": [
 				{

@@ -166,6 +166,80 @@ function recolorT0(data, width, height, ch) {
   console.log(`  t0: hair ${hair} px, bow ${bow} px`);
 }
 
+// 四角星绘制辅助（只画在 mask 判定为蓝色的像素上，避免盖住白条纹/高光）
+function paintStar(data, width, height, ch, cx, cy, R, col, core, onlyBlue) {
+  const p = 0.55;
+  let n = 0;
+  const rOut = Math.ceil(R) + 2;
+  for (let dy = -rOut; dy <= rOut; dy++) {
+    for (let dx = -rOut; dx <= rOut; dx++) {
+      const adx = Math.abs(dx), ady = Math.abs(dy);
+      const d = (Math.pow(adx, p) + Math.pow(ady, p)) / Math.pow(R, p);
+      if (d > 1.12) continue;
+      const x = Math.round(cx + dx), y = Math.round(cy + dy);
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+      const o = (y * width + x) * ch;
+      if (ch === 4 && data[o + 3] < 8) continue;
+      const r0 = data[o], g0 = data[o + 1], b0 = data[o + 2];
+      if (onlyBlue) {
+        const [h0] = rgb2hsv(r0, g0, b0);
+        if (!(h0 >= 185 && h0 <= 265)) continue; // 只画在蓝色裙面上
+      }
+      const alpha = d < 0.92 ? 1 : clamp((1.12 - d) / 0.2, 0, 1);
+      const cc = d < 0.45 ? core : col;
+      data[o] = Math.round(r0 * (1 - alpha) + cc[0] * alpha);
+      data[o + 1] = Math.round(g0 * (1 - alpha) + cc[1] * alpha);
+      data[o + 2] = Math.round(b0 * (1 - alpha) + cc[2] * alpha);
+      n++;
+    }
+  }
+  return n;
+}
+
+// 裙摆星星图案 + 胸口蝴蝶结白色结心（对齐偶像服立绘）
+function decorateT1(data, width, height, ch) {
+  // 裙子 bbox（atlas 像素）
+  const sL = 16, sR = 780, sT = 1195, sB = 1430;
+  const bw = sR - sL, bh = sB - sT;
+  const white = [245, 249, 255], gold = [242, 196, 92], coreW = [255, 255, 255], coreG = [255, 244, 214];
+  let total = 0;
+  const stars = [
+    [0.20, 0.32, 15, white, coreW],
+    [0.44, 0.62, 13, white, coreW],
+    [0.66, 0.30, 14, white, coreW],
+    [0.88, 0.58, 13, white, coreW],
+    [0.30, 0.80, 12, white, coreW],
+  ];
+  for (const [fx, fy, r, col, core] of stars) {
+    total += paintStar(data, width, height, ch, sL + fx * bw, sT + fy * bh, r, col, core, true);
+  }
+  total += paintStar(data, width, height, ch, sL + 0.72 * bw, sT + 0.42 * bh, 24, gold, coreG, true);
+  console.log(`  t1 decorate: skirt stars ${total} px`);
+
+  // 胸口蝴蝶结白色结心（打结点在两环交汇处）
+  const bx = 108, by = 1790, br = 12;
+  let knot = 0;
+  const rOut = br + 2;
+  for (let dy = -rOut; dy <= rOut; dy++) {
+    for (let dx = -rOut; dx <= rOut; dx++) {
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > br + 1.5) continue;
+      const x = bx + dx, y = by + dy;
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+      const o = (y * width + x) * ch;
+      if (ch === 4 && data[o + 3] < 8) continue;
+      const [h0, s0] = rgb2hsv(data[o], data[o + 1], data[o + 2]);
+      if (!(h0 >= 185 && h0 <= 265)) continue; // 只盖蓝色结面
+      const alpha = d < br - 1 ? 1 : clamp((br + 1.5 - d) / 2.5, 0, 1);
+      data[o] = Math.round(data[o] * (1 - alpha) + 250 * alpha);
+      data[o + 1] = Math.round(data[o + 1] * (1 - alpha) + 252 * alpha);
+      data[o + 2] = Math.round(data[o + 2] * (1 - alpha) + 255 * alpha);
+      knot++;
+    }
+  }
+  console.log(`  t1 decorate: bow knot ${knot} px`);
+}
+
 // ---------- texture_01：整套服装替换 ----------
 function recolorT1(data, width, height, ch) {
   let top = 0, skirt = 0, sock = 0, collar = 0, boots = 0;
@@ -226,7 +300,11 @@ async function main() {
   fs.mkdirSync(path.join(DST, 'motions'), { recursive: true });
 
   await recolorFile('Hiyori.2048/texture_00.png', 'Lidousha.2048/texture_00.png', recolorT0);
-  await recolorFile('Hiyori.2048/texture_01.png', 'Lidousha.2048/texture_01.png', recolorT1);
+  await recolorFile('Hiyori.2048/texture_01.png', 'Lidousha.2048/texture_01.png', (d, w, h, c) => {
+    recolorT1(d, w, h, c);
+    decorateT1(d, w, h, c);
+  });
+  await sharp(path.join(SRC, 'Hiyori.2048/texture_00.png')).metadata(); // noop keep sharp import used
 
   // 其余文件（moc3/physics/pose/cdi/userdata/motions/model3.json）
   for (const f of fs.readdirSync(SRC)) {
@@ -241,6 +319,9 @@ async function main() {
   const src = JSON.parse(fs.readFileSync(path.join(SRC, 'Hiyori.model3.json'), 'utf8'));
   src.FileReferences.Moc = 'Lidousha.moc3';
   src.FileReferences.Textures = src.FileReferences.Textures.map((t) => t.replace('Hiyori.2048', 'Lidousha.2048'));
+  for (const k of ['Physics', 'Pose', 'UserData', 'DisplayInfo']) {
+    if (src.FileReferences[k]) src.FileReferences[k] = src.FileReferences[k].replace(/^Hiyori/, 'Lidousha');
+  }
   fs.writeFileSync(path.join(DST, 'Lidousha.model3.json'), JSON.stringify(src, null, '\t'));
   console.log('done ->', DST);
 }
