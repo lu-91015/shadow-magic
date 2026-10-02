@@ -399,6 +399,12 @@ export function ensureReady(): Promise<void> {
       await p.query(
         `ALTER TABLE live_song ADD COLUMN IF NOT EXISTS excluded BOOLEAN DEFAULT false`,
       );
+      // 听歌识曲已处理场次（scripts/song-by-ear.ts）
+      await p.query(`CREATE TABLE IF NOT EXISTS song_ear_done (
+        bvid TEXT PRIMARY KEY,
+        hits INTEGER NOT NULL DEFAULT 0,
+        created_at BIGINT
+      )`);
       // video_stat 手动补充标记
       await p.query(
         `ALTER TABLE video_stat ADD COLUMN IF NOT EXISTS manual INTEGER NOT NULL DEFAULT 0`,

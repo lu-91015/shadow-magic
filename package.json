@@ -18,6 +18,8 @@
     "match:senders": "tsx scripts/match-replay-senders.ts",
     "live-monitor": "tsx scripts/live-monitor.ts",
     "sync:songs": "tsx scripts/sync-songs.ts",
+    "sync:songs-clean": "tsx scripts/clean-songs.ts",
+    "songs:ear": "tsx scripts/song-by-ear.ts",
     "sync:covers": "tsx scripts/sync-covers.ts",
     "sync:stats": "tsx scripts/sync-stats.ts",
     "sync:authors": "tsx scripts/sync-authors.ts",

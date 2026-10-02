@@ -20,6 +20,7 @@ import {
   upsertLiveSongs,
   markSongsChecked,
 } from '../lib/db';
+import { cleanSongTitles } from '../lib/known-songs';
 
 // ---------- 环境 ----------
 const envFile = path.join(process.cwd(), '.env');
@@ -32,18 +33,18 @@ if (fs.existsSync(envFile))
 const LIMIT = Number(process.env.LIMIT ?? 0);
 const FORCE = process.env.FORCE === '1';
 const LOCAL_FFMPEG = path.join(process.cwd(), 'tools', 'ffmpeg', 'bin', 'ffmpeg.exe');
-const FFMPEG = fs.existsSync(LOCAL_FFMPEG)
+export const FFMPEG = fs.existsSync(LOCAL_FFMPEG)
   ? LOCAL_FFMPEG
   : process.env.FFMPEG_BIN || 'ffmpeg';
 // PaddleOCR 运行在 .venv（Python 3.11）中；ocr_songlist.py 负责整帧检测+识别
 const VENV_PY = path.join(process.cwd(), '.venv', 'Scripts', 'python.exe');
-const PYTHON = fs.existsSync(VENV_PY) ? VENV_PY : process.env.PYTHON_BIN || 'python3';
+export const PYTHON = fs.existsSync(VENV_PY) ? VENV_PY : process.env.PYTHON_BIN || 'python3';
 const OCR_SCRIPT = path.join(process.cwd(), 'scripts', 'ocr_songlist.py');
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 // B站 upos CDN 会拦截 ffmpeg 默认 UA（Lavf），需带浏览器 UA + Referer，否则 403
-const FFMPEG_HEADERS = `Referer: https://www.bilibili.com/\r\nUser-Agent: ${UA}`;
+export const FFMPEG_HEADERS = `Referer: https://www.bilibili.com/\r\nUser-Agent: ${UA}`;
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dousha-song-'));
 
 function sleep(ms: number) {
@@ -294,7 +295,15 @@ export async function scanBvid(bvid: string): Promise<{ ok: boolean; songs: numb
     .filter((d) => d.score >= 0.6)
     .map((d) => d.text)
     .join('\n');
-  const songs = pickSongs(dets);
+  const picked = pickSongs(dets);
+  // 对照已知歌单清洗：垃圾行剔除、已知歌纠错、未知但像歌名的保留
+  const cleaned = picked.length ? cleanSongTitles(picked) : { songs: [] };
+  const songs = cleaned.songs.map((s) => s.title);
+  if (picked.length && songs.length < picked.length) {
+    console.log(
+      `    清洗：${picked.length} → ${songs.length}（剔除 ${picked.length - songs.length} 行垃圾/重复）`,
+    );
+  }
   await upsertLiveSongs(bvid, songs, raw.trim());
   await markSongsChecked(bvid);
   if (songs.length) {
