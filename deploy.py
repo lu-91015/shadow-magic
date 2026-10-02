@@ -14,6 +14,14 @@
 """
 import paramiko, os, sys, subprocess
 
+# Windows 控制台默认 GBK，构建日志含特殊字符（如 webpack 的 ƒ）会抛
+# UnicodeEncodeError。统一按 utf-8 输出，缺字用 replace 兜底。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 LOCAL_REPO = os.getcwd()
 BUNDLE = os.path.join(os.environ.get("TEMP", "C:\\Windows\\Temp"), "deploy.bundle")
 REMOTE_DIR = "/opt/lidousha"
