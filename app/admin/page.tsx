@@ -83,6 +83,8 @@ const CAT_LABEL: Record<string, string> = {
   collab: '联动回',
   marshmallow: '棉花糖回',
   game: '游戏回',
+  movie: '观影回',
+  bedlimit: '床限回',
   talk: '杂谈回',
   other: '其他',
   sing: '歌回',
@@ -2098,6 +2100,8 @@ function LivesTab() {
                   <option value="collab">联动回</option>
                   <option value="marshmallow">棉花糖回</option>
                   <option value="game">游戏回</option>
+                  <option value="movie">观影回</option>
+                  <option value="bedlimit">床限回</option>
                   <option value="talk">杂谈回</option>
                   <option value="other">其他（自动归类）</option>
                 </select>

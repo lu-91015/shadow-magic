@@ -6,7 +6,7 @@ import ScreenNav from '@/components/ScreenNav';
 import CornerDock from '@/components/CornerDock';
 import CountUp from '@/components/CountUp';
 import { getLiveStatus, getFollowerStats } from '@/lib/bilibili';
-import { getRandomQuote, getHeroConfig, HERO_DEFAULTS } from '@/lib/db';
+import { getRandomQuote, getHeroConfig, HERO_DEFAULTS, queryVerifiedSongCount } from '@/lib/db';
 import { getTopicPosts } from '@/lib/topic';
 
 export const dynamic = 'force-dynamic';
@@ -31,7 +31,7 @@ async function safe<T>(p: Promise<T>, fallback: T): Promise<T> {
 }
 
 async function HomeScreens() {
-  const [live, follower, topicPosts, quote, hero] = await Promise.all([
+  const [live, follower, topicPosts, quote, hero, verifiedSongs] = await Promise.all([
     safe(getLiveStatus(), {
       liveStatus: 0,
       title: null,
@@ -45,6 +45,7 @@ async function HomeScreens() {
     safe(getTopicPosts(), []),
     safe(getRandomQuote(), null),
     safe(getHeroConfig(), HERO_DEFAULTS),
+    safe(queryVerifiedSongCount(), 0),
   ]);
 
   return (
@@ -118,16 +119,24 @@ async function HomeScreens() {
             「{quote ?? hero.defaultQuote}」
           </p>
 
-          {/* 大数字：已投喂竹子（关注数） */}
-          <div className="mt-1">
-            <div className="text-5xl font-extrabold tracking-wide text-amber-300 tabular-nums drop-shadow-lg md:text-7xl">
-              {follower.follower == null ? (
-                '—'
-              ) : (
-                <CountUp value={follower.follower} />
-              )}
+          {/* 大数字：已投喂竹子（关注数） + 已核对唱歌次数 */}
+          <div className="mt-1 flex items-end justify-center gap-8 md:gap-12">
+            <div>
+              <div className="text-5xl font-extrabold tracking-wide text-amber-300 tabular-nums drop-shadow-lg md:text-7xl">
+                {follower.follower == null ? (
+                  '—'
+                ) : (
+                  <CountUp value={follower.follower} />
+                )}
+              </div>
+              <div className="mt-1 text-sm text-white/50">已投喂竹子（根）</div>
             </div>
-            <div className="mt-1 text-sm text-white/50">已投喂竹子（根）</div>
+            <div>
+              <div className="text-5xl font-extrabold tracking-wide text-rose-300 tabular-nums drop-shadow-lg md:text-7xl">
+                <CountUp value={verifiedSongs} />
+              </div>
+              <div className="mt-1 text-sm text-white/50">已核对唱过的歌（次）</div>
+            </div>
           </div>
 
           {/* 开播状态一行 */}

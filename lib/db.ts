@@ -1948,6 +1948,19 @@ export async function querySongFrequency(): Promise<
   return rows.map((r) => ({ title: r.title, count: Number(r.count) }));
 }
 
+// 已人工核对（songs_override=true）场次中唱歌总次数（首页统计）
+export async function queryVerifiedSongCount(): Promise<number> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ cnt: string }>(
+    `SELECT COUNT(*)::text AS cnt
+     FROM live_song l
+     JOIN live_session s ON s.id = l.bvid
+     WHERE COALESCE(s.songs_override,false)=true AND COALESCE(l.excluded,false)=false`,
+  );
+  return Number(rows[0]?.cnt ?? 0);
+}
+
+
 // ---------- 动态评论 ----------
 import type { BiliComment } from './bilibili';
 

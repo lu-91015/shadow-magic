@@ -8,6 +8,8 @@ export const LIVE_CATEGORY_KEYS = [
   'collab',
   'marshmallow',
   'game',
+  'movie',
+  'bedlimit',
   'talk',
   'other',
 ] as const;
@@ -25,6 +27,8 @@ export const LIVE_CATEGORIES: {
   { key: 'collab', label: '联动回', chipCls: 'bg-fuchsia-500/20 text-fuchsia-200' },
   { key: 'marshmallow', label: '棉花糖回', chipCls: 'bg-orange-500/20 text-orange-200' },
   { key: 'game', label: '游戏回', chipCls: 'bg-sky-500/20 text-sky-200' },
+  { key: 'movie', label: '观影回', chipCls: 'bg-indigo-500/20 text-indigo-200' },
+  { key: 'bedlimit', label: '床限回', chipCls: 'bg-purple-500/20 text-purple-200' },
   { key: 'talk', label: '杂谈回', chipCls: 'bg-teal-500/20 text-teal-200' },
   { key: 'other', label: '其他', chipCls: 'bg-white/10 text-white/70' },
 ];
@@ -60,6 +64,16 @@ const RULES: { key: LiveCategoryKey; re: RegExp }[] = [
   {
     key: 'official',
     re: /(BW|萤火虫|漫展|嘉年华|官方|线下|公演|颁奖|首发|首曝|披露回|新衣|发售|发布|年会|跨年|活动日)/i,
+  },
+  // 观影回：一起看电影/动画等
+  {
+    key: 'movie',
+    re: /(观影|电影|看片|观影会|一起看|同看|放映厅|放映室)/i,
+  },
+  // 床限回：床上限定直播
+  {
+    key: 'bedlimit',
+    re: /(床限|床上限?定|被窝|被窝里)/i,
   },
   // 游戏回：具体游戏名 + 通用玩法词
   {
