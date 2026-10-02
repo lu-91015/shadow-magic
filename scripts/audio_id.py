@@ -65,7 +65,12 @@ async def main() -> None:
         res = audd_recognize(path)
     else:
         res = await shazam_recognize(path)
-    print("SHAZAM_JSON:" + json.dumps(res, ensure_ascii=False))
+    # 显式以 UTF-8 写出，避免 Windows/非 UTF-8 locale 下 print 把中文/日文歌名替换成乱码
+    sys.stdout.buffer.write(
+        ("SHAZAM_JSON:" + json.dumps(res, ensure_ascii=False)).encode("utf-8")
+    )
+    sys.stdout.buffer.write(b"\n")
+    sys.stdout.buffer.flush()
 
 
 if __name__ == "__main__":
