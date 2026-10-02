@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-// 左下角豆沙小人：优先渲染 Live2D 模型（若后台配置了模型路径），
-// 否则回退为亚克力立牌图片（视线追随鼠标的视差效果）。
+// 左下角豆沙小人：只渲染 Live2D 模型（无立牌兜底）。
 // Live2D：模型原生支持视线/头部跟随鼠标（model.focus），点击触发随机动作。
 interface Line {
   id: number;
@@ -14,18 +13,6 @@ interface Line {
   dates: string | null;
   onlyLive: boolean;
 }
-
-// 立绘素材（亚克力牌，每次访问随机一张；不含二维码图 dousha-10）
-const STANDEES = [
-  '/characters/dousha-0.png',
-  '/characters/dousha-1.png',
-  '/characters/dousha-3.png',
-  '/characters/dousha-5.png',
-  '/characters/dousha-7.png',
-  '/characters/dousha-8.png',
-  '/characters/dousha-9.png',
-  '/characters/dousha-11.png',
-];
 
 // Cubism 4 运行时核心（Cubism SDK 官方 CDN），Live2D 模型加载前需要它
 const CUBISM_CORE = 'https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js';
@@ -80,15 +67,11 @@ function pickWeighted(lines: Line[]): Line | null {
 }
 
 export default function Mascot() {
-  const cardRef = useRef<HTMLButtonElement>(null);
   const canvasHost = useRef<HTMLDivElement>(null);
-  const idleRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<any>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [img, setImg] = useState<string | null>(null);
   const [bubble, setBubble] = useState<string | null>(null);
   const [modelOk, setModelOk] = useState(false);
-  const [pop, setPop] = useState(false);
   const linesRef = useRef<Line[]>([]);
   const liveRef = useRef(0);
 
@@ -156,8 +139,8 @@ export default function Mascot() {
         }
         setModelOk(true);
       } catch (err) {
-        // 模型加载失败（未放文件 / 核心脚本不可用 / 版本不兼容）→ 回退立牌
-        console.warn('[Mascot] Live2D 加载失败，回退立牌：', err);
+        // 模型加载失败（未放文件 / 核心脚本不可用 / 版本不兼容）：保持隐藏，不回退立牌
+        console.warn('[Mascot] Live2D 加载失败：', err);
         setModelOk(false);
       }
     })();
@@ -166,22 +149,11 @@ export default function Mascot() {
     };
   }, [load]);
 
-  // 鼠标跟随：Live2D 用模型自带 focus；立牌用位移+倾斜模拟视线
+  // 鼠标跟随：Live2D 用模型自带 focus
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       const m = modelRef.current;
-      if (m && m.focus) {
-        m.focus(e.clientX, e.clientY);
-        return;
-      }
-      const el = cardRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      const dx = e.clientX - (r.left + r.width / 2);
-      const dy = e.clientY - (r.top + r.height * 0.22);
-      const dist = Math.hypot(dx, dy) || 1;
-      const k = Math.min(1, dist / 500);
-      el.style.transform = `translate(${((dx / dist) * 7 * k).toFixed(1)}px, ${((dy / dist) * 5 * k).toFixed(1)}px) rotate(${((dx / dist) * 3.5 * k).toFixed(2)}deg)`;
+      if (m && m.focus) m.focus(e.clientX, e.clientY);
     };
     window.addEventListener('mousemove', onMove);
     return () => window.removeEventListener('mousemove', onMove);
@@ -205,7 +177,7 @@ export default function Mascot() {
     hideTimer.current = setTimeout(() => setBubble(null), 5000);
   }, []);
 
-  // 点击：Live2D 随机动作 + 发言 + 弹跳
+  // 点击：Live2D 随机动作 + 发言
   const onTap = useCallback(() => {
     const m = modelRef.current;
     if (m && m.motion) {
@@ -217,11 +189,6 @@ export default function Mascot() {
         }
       }
     }
-    setPop(false);
-    requestAnimationFrame(() => {
-      setPop(true);
-      setTimeout(() => setPop(false), 440);
-    });
     say();
   }, [say]);
 
@@ -238,46 +205,6 @@ export default function Mascot() {
     return () => clearTimeout(t);
   }, [say]);
 
-  // 立牌模式：优先用后台上传的立绘（不含二维码图），为空或接口失败时回退静态素材
-  useEffect(() => {
-    setImg(STANDEES[Math.floor(Math.random() * STANDEES.length)]);
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch('/api/characters', { cache: 'no-store' });
-        const j = await r.json();
-        const srcs: string[] = (j.list ?? [])
-          .map((c: { src?: string | null }) => c.src ?? '')
-          .filter((s: string) => s && s !== '/characters/dousha-10.png');
-        if (!cancelled && srcs.length)
-          setImg(srcs[Math.floor(Math.random() * srcs.length)]);
-      } catch {
-        /* 保留静态兜底 */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // 简易 Live2D 待机动效：呼吸（纵向缩放）+ 轻摆 + 上下浮动，实时渲染
-  useEffect(() => {
-    if (modelOk) return;
-    let raf = 0;
-    const start = performance.now();
-    const tick = (now: number) => {
-      const t = (now - start) / 1000;
-      const bob = Math.sin(t * 1.2) * 4; // 上下浮动
-      const sway = Math.sin(t * 0.8) * 1.6; // 轻微摇摆
-      const breath = 1 + Math.sin(t * 1.6) * 0.012; // 呼吸
-      if (idleRef.current)
-        idleRef.current.style.transform = `translateY(${bob.toFixed(2)}px) rotate(${sway.toFixed(2)}deg) scaleY(${breath.toFixed(4)})`;
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [modelOk]);
-
   return (
     <div className="fixed bottom-3 left-3 z-40 flex select-none flex-col items-center">
       {bubble && (
@@ -286,39 +213,15 @@ export default function Mascot() {
         </div>
       )}
 
-      {/* Live2D 画布（模型就绪时显示） */}
+      {/* Live2D 画布（唯一形象，无图片兜底） */}
       <div
         ref={canvasHost}
         onClick={onTap}
-        className={modelOk ? 'cursor-pointer' : 'hidden'}
+        className={modelOk ? 'cursor-pointer' : 'invisible'}
         aria-hidden={!modelOk}
+        aria-label="豆沙小人"
+        title="点点我！"
       />
-
-      {/* 回退：亚克力立牌 + 简易 Live2D 待机动效 */}
-      {!modelOk && (
-        <button
-          ref={cardRef}
-          onClick={onTap}
-          aria-label="豆沙小人"
-          title="点点我！"
-          className="group origin-bottom transition-transform duration-150 ease-out will-change-transform"
-          style={{ transform: 'translate(0,0) rotate(0deg)' }}
-        >
-          <div ref={idleRef} className="will-change-transform">
-            <div className={pop ? 'mascot-pop' : ''}>
-              {img && (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={img}
-                  alt="豆沙"
-                  draggable={false}
-                  className="h-44 w-auto rounded-md shadow-[0_10px_24px_rgba(0,0,0,0.45)] ring-1 ring-white/20 transition group-hover:brightness-105 md:h-52"
-                />
-              )}
-            </div>
-          </div>
-        </button>
-      )}
     </div>
   );
 }
