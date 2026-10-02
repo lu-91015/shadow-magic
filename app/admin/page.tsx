@@ -1925,7 +1925,17 @@ function LivesTab() {
             <tbody>
               {paged.map((l) => (
                 <tr key={l.bvid} className="border-b border-white/5">
-                  <td className="px-2 max-w-[36vw] truncate">{l.title}</td>
+                  <td className="px-2 max-w-[36vw] truncate" title={l.bvid}>
+                    <a
+                      href={`https://www.bilibili.com/video/${l.bvid}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sky-300 hover:underline"
+                      title={`在 Bilibili 打开：${l.bvid}`}
+                    >
+                      {l.title}
+                    </a>
+                  </td>
                   <td className="px-2 text-white/60">
                     {CAT_LABEL[l.category] ?? l.category ?? '—'}
                   </td>
