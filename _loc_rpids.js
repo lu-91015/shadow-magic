@@ -1,0 +1,1 @@
+const {Pool}=require('pg');(async()=>{const p=new Pool({connectionString:process.env.LU});const c=await p.connect();const r=await c.query('SELECT rpid::text AS r FROM dyn_comment');require('fs').writeFileSync('c:/tmp/_loc_rpids.json', JSON.stringify(r.rows.map(x=>x.r)));await c.release();await p.end();})().catch(e=>{console.error(e.message);process.exit(1)});

@@ -319,7 +319,15 @@ async function biliGet<T = any>(url: string): Promise<T> {
     cache: 'no-store',
     signal: AbortSignal.timeout(15000),
   });
-  return (await res.json()) as T;
+  // 先用 text 读取：B站风控/超时可能返回 HTML 或空串，直接 res.json()
+  // 会抛 SyntaxError 导致上层崩溃（首页整页 500）。解析失败则显式抛错，
+  // 由调用方的容错逻辑（如首页 safe()）兜底，而不是白屏。
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`biliGet 返回非 JSON（status ${res.status}）：${url}`);
+  }
 }
 
 // 导出的通用 GET（与 biliGet 同请求头），供脚本直接调空间/标签等接口
@@ -547,8 +555,11 @@ export async function getFollowerStats(): Promise<FollowerStats> {
     const data = await biliGet<{
       data?: { follower: number; following: number };
     }>(`https://api.bilibili.com/x/relation/stat?vmid=${UID}`);
+    // B站风控时可能返回 code=0 但 follower=0 的脏数据（本站账号 9 万+ 粉），
+    // 按无效处理返回 null，前端显示「—」而不是 0。
+    const follower = data?.data?.follower;
     return {
-      follower: data?.data?.follower ?? null,
+      follower: follower != null && follower > 0 ? follower : null,
       following: data?.data?.following ?? null,
     };
   });

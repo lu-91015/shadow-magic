@@ -5,29 +5,114 @@ import LiveMonitor from '@/components/LiveMonitor';
 
 let currentRole: string | null = null; // 'admin' | 'guest' | null
 
+// ---------- 全局轻反馈：Toast / 加载指示 / 确认框 ----------
+// 用模块级发布订阅实现，各 Tab 无需改造即可复用（挂载点见 AdminPage）
+type ToastKind = 'ok' | 'err' | 'info';
+interface ToastItem {
+  id: number;
+  kind: ToastKind;
+  text: string;
+}
+
+const toastBus = new Set<(t: ToastItem) => void>();
+const loadBus = new Set<(n: number) => void>();
+const askBus = new Set<(q: string | null) => void>();
+
+let toastSeq = 0;
+let pendingLoad = 0;
+let askResolve: ((v: boolean) => void) | null = null;
+let onUnauthorized: (() => void) | null = null;
+
+function toast(text: string, kind: ToastKind = 'info') {
+  const t: ToastItem = { id: ++toastSeq, kind, text };
+  toastBus.forEach((fn) => fn(t));
+}
+
+// 取代原生 confirm 的自定义确认框（Promise 版，调用处需 await）
+function ask(text: string): Promise<boolean> {
+  if (askResolve) askResolve(false); // 结束上一个未完成的确认
+  return new Promise<boolean>((resolve) => {
+    askResolve = resolve;
+    askBus.forEach((fn) => fn(text));
+  });
+}
+function settleAsk(v: boolean) {
+  askBus.forEach((fn) => fn(null));
+  const r = askResolve;
+  askResolve = null;
+  r?.(v);
+}
+
+function pushLoad(d: number) {
+  pendingLoad = Math.max(0, pendingLoad + d);
+  loadBus.forEach((fn) => fn(pendingLoad));
+}
+
 async function api(path: string, opts: RequestInit = {}) {
   const method = (opts.method || 'GET').toUpperCase();
   if (method !== 'GET' && currentRole === 'guest') {
-    if (typeof window !== 'undefined') alert('当前为只读访客账号，无权限执行增删改操作。');
+    toast('当前为只读访客账号，无权限执行增删改操作。', 'err');
     return { ok: false, error: 'readonly' } as any;
   }
-  const res = await fetch(path, {
-    ...opts,
-    credentials: 'include',
-    headers: opts.body ? { 'Content-Type': 'application/json', ...(opts.headers || {}) } : opts.headers,
-  });
-  if (res.status === 401) throw new Error('UNAUTHORIZED');
-  return res.json().catch(() => ({}));
+  pushLoad(1);
+  try {
+    const res = await fetch(path, {
+      ...opts,
+      credentials: 'include',
+      headers: opts.body ? { 'Content-Type': 'application/json', ...(opts.headers || {}) } : opts.headers,
+    });
+    if (res.status === 401) {
+      toast('登录状态已失效，请重新登录', 'err');
+      onUnauthorized?.();
+      throw new Error('UNAUTHORIZED');
+    }
+    return await res.json().catch(() => ({}));
+  } catch (e) {
+    const msg = (e as Error)?.message;
+    if (msg !== 'UNAUTHORIZED') toast(`请求失败：${msg ?? String(e)}`, 'err');
+    throw e;
+  } finally {
+    pushLoad(-1);
+  }
 }
 
+// 直播回放分类（与 lib/liveCategory.ts 保持一致，含旧值兼容）
+const CAT_LABEL: Record<string, string> = {
+  official: '官方活动回',
+  special: '特殊回',
+  collab: '联动回',
+  marshmallow: '棉花糖回',
+  game: '游戏回',
+  talk: '杂谈回',
+  other: '其他',
+  sing: '歌回',
+};
+
 const TABS = [
-  { id: 'jobs', label: '任务调度' },
-  { id: 'clips', label: '切片收集' },
-  { id: 'lives', label: '直播与歌单' },
-  { id: 'track', label: '数据追踪' },
-  { id: 'chars', label: '立绘上传' },
-  { id: 'creds', label: 'B站凭据' },
-  { id: 'system', label: '数据 & 审计' },
+  { id: 'jobs', label: '任务调度', icon: '⏱️', desc: '定时任务与运行记录' },
+  { id: 'hero', label: '首页文案', icon: '🏠', desc: '首页名字 / 粉丝牌 / 默认人设句' },
+  { id: 'clips', label: '切片收集', icon: '✂️', desc: '粉丝切片收录与拉黑' },
+  { id: 'lives', label: '直播与歌单', icon: '🎬', desc: '回放扫描、分类与导出' },
+  { id: 'track', label: '数据追踪', icon: '📈', desc: '粉丝 / 营收趋势' },
+  { id: 'chars', label: '立绘上传', icon: '🖼️', desc: '角色形象素材' },
+  { id: 'quotes', label: '首页语录', icon: '💬', desc: '首页随机一句话' },
+  { id: 'works', label: '豆沙作品', icon: '🎨', desc: '豆沙自制投稿' },
+  { id: 'mascot', label: '小人台词', icon: '🐼', desc: '左下角小人说话' },
+  { id: 'assets', label: '素材库', icon: '📦', desc: '表情 / 指针 / 输入法' },
+  { id: 'shop', label: '商店', icon: '🛍️', desc: '周边与装扮' },
+  { id: 'news', label: '通知', icon: '📢', desc: '站点公告' },
+  { id: 'topic', label: '豆漫墙', icon: '🧱', desc: '#大熊猫豆漫# 话题动态入库管理' },
+  { id: 'creds', label: 'B站凭据', icon: '🔑', desc: 'Cookie 与登录态' },
+  { id: 'system', label: '数据 & 审计', icon: '🛠️', desc: '数据库概况与操作日志' },
+];
+
+const tabMeta = (id: string) => TABS.find((t) => t.id === id) ?? TABS[0];
+
+// 侧栏分组：把 13 个平铺页签收敛成 3 组，降低查找成本
+const NAV_GROUPS = [
+  { label: '站点内容', items: ['hero', 'quotes', 'works', 'mascot', 'assets', 'shop', 'news', 'topic'] },
+  { label: 'B站数据', items: ['clips', 'lives', 'track', 'chars'] },
+  { label: '系统运维', items: ['jobs', 'creds', 'system'] },
 ];
 
 export default function AdminPage() {
@@ -36,6 +121,16 @@ export default function AdminPage() {
   const [loginErr, setLoginErr] = useState('');
   const [tab, setTab] = useState('jobs');
   const [role, setRole] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
+
+  // 登录失效时由 api() 回调到此，回到登录页而不是停在过期界面
+  useEffect(() => {
+    const handle = () => setAuthed(false);
+    onUnauthorized = handle;
+    return () => {
+      if (onUnauthorized === handle) onUnauthorized = null;
+    };
+  }, []);
 
   useEffect(() => {
     api('/api/admin/me')
@@ -46,6 +141,19 @@ export default function AdminPage() {
       })
       .catch(() => setAuthed(false));
   }, []);
+
+  // 记住所在分页：刷新或分享带 #hash 的链接都能直达
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const h = decodeURIComponent(window.location.hash.replace(/^#/, ''));
+    if (h && TABS.some((t) => t.id === h)) setTab(h);
+  }, []);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.location.hash.slice(1) !== tab) {
+      window.history.replaceState(null, '', `#${tab}`);
+    }
+  }, [tab]);
 
   async function doLogin() {
     setLoginErr('');
@@ -60,26 +168,35 @@ export default function AdminPage() {
       setAuthed(true);
       setRole(j.role ?? null);
       currentRole = j.role ?? null;
+      setPw('');
     } else setLoginErr(j.error || '登录失败');
   }
 
-  if (authed === null) return <div className="p-10 text-white/60">检查登录中…</div>;
+  if (authed === null)
+    return <div className="p-10 text-white/60">检查登录中…</div>;
+
   if (!authed)
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-950">
-        <div className="w-80 rounded-2xl border border-white/10 bg-neutral-900 p-6">
+      <div className="flex min-h-screen items-center justify-center bg-neutral-950 p-4">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            doLogin();
+          }}
+          className="w-80 rounded-2xl border border-white/10 bg-neutral-900 p-6"
+        >
           <h1 className="mb-4 text-xl font-semibold text-white">🔒 后台登录</h1>
           <input
             type="password"
             value={pw}
             onChange={(e) => setPw(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && doLogin()}
             placeholder="请输入管理密码"
-            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white outline-none"
+            autoFocus
+            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-emerald-500/60"
           />
           {loginErr && <p className="mt-2 text-sm text-red-400">{loginErr}</p>}
           <button
-            onClick={doLogin}
+            type="submit"
             className="mt-4 w-full rounded-lg bg-emerald-600 py-2 font-medium text-white hover:bg-emerald-500"
           >
             进入
@@ -87,61 +204,312 @@ export default function AdminPage() {
           <p className="mt-3 text-xs text-white/40">
             管理密码由环境变量 ADMIN_PASSWORD 设置（未设置时默认为 admin）；只读访客账号密码为 GUEST_PASSWORD（未设置时默认为 guest），仅可查看与查询、不能增删改。
           </p>
-        </div>
+        </form>
       </div>
     );
 
+  const meta = tabMeta(tab);
+
   return (
     <div className="min-h-screen bg-neutral-950 text-white">
-      <header className="flex items-center justify-between border-b border-white/10 px-6 py-3">
-        <h1 className="text-lg font-semibold">李豆沙_Channel · 后台管理</h1>
-        <button
-          onClick={async () => {
-            await fetch('/api/admin/logout', { method: 'POST', credentials: 'include' });
-            setAuthed(false);
-          }}
-          className="rounded-lg border border-white/15 px-3 py-1 text-sm text-white/70 hover:bg-white/10"
-        >
-          退出
-        </button>
+      <LoadingBar />
+      <AskModal />
+      <Toaster />
+
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-neutral-950/90 px-4 py-3 backdrop-blur md:px-6">
+        <div className="flex items-center gap-3">
+          <h1 className="truncate text-base font-semibold md:text-lg">李豆沙_Channel · 后台管理</h1>
+          <span className="hidden rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/50 sm:inline">
+            {meta.icon} {meta.label}
+          </span>
+          <button
+            onClick={async () => {
+              await fetch('/api/admin/logout', { method: 'POST', credentials: 'include' });
+              setAuthed(false);
+            }}
+            className="ml-auto rounded-lg border border-white/15 px-3 py-1 text-sm text-white/70 transition hover:bg-white/10 hover:text-white"
+          >
+            退出
+          </button>
+        </div>
       </header>
+
       {role === 'guest' && (
-        <div className="border-b border-amber-500/30 bg-amber-500/15 px-6 py-2 text-sm text-amber-200">
+        <div className="border-b border-amber-500/30 bg-amber-500/15 px-4 py-2 text-sm text-amber-200 md:px-6">
           👁 只读访客模式：可查看与查询数据，但不能进行任何增删改操作。
         </div>
       )}
-      <nav className="flex gap-1 border-b border-white/10 px-4">
+
+      {/* 窄屏：横向可滚动页签 */}
+      <nav className="sticky top-[3.4rem] z-30 flex gap-1 overflow-x-auto border-b border-white/10 bg-neutral-950/95 px-3 py-2 backdrop-blur md:hidden">
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`px-4 py-3 text-sm ${
-              tab === t.id
-                ? 'border-b-2 border-emerald-400 text-white'
-                : 'text-white/50 hover:text-white'
+            className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition ${
+              tab === t.id ? 'bg-emerald-500/20 text-emerald-200' : 'text-white/55 hover:bg-white/5'
             }`}
           >
-            {t.label}
+            {t.icon} {t.label}
           </button>
         ))}
       </nav>
-      <main className="p-6">
-        {tab === 'jobs' && <JobsTab />}
-        {tab === 'clips' && <ClipsTab />}
-        {tab === 'lives' && <LivesTab />}
-        {tab === 'track' && <TrackTab />}
-        {tab === 'chars' && <CharsTab />}
-        {tab === 'creds' && <CredsTab />}
-        {tab === 'system' && <SystemTab />}
-      </main>
+
+      <div className="flex items-start">
+        {/* 宽屏：分组侧栏 */}
+        <aside
+          className={`sticky top-[3.4rem] hidden h-[calc(100vh-3.4rem)] shrink-0 flex-col overflow-y-auto border-r border-white/10 bg-neutral-950/60 p-3 md:flex ${
+            collapsed ? 'w-[4.5rem]' : 'w-60'
+          }`}
+        >
+          <div className="flex-1">
+            <NavGroups tab={tab} setTab={setTab} collapsed={collapsed} />
+          </div>
+          <button
+            onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? '展开侧栏' : '收起侧栏'}
+            className="mt-3 rounded-lg border border-white/10 px-2 py-1.5 text-xs text-white/50 transition hover:bg-white/5 hover:text-white"
+          >
+            {collapsed ? '»' : '« 收起'}
+          </button>
+        </aside>
+
+        <main className="min-w-0 flex-1 overflow-x-auto p-4 md:p-6">
+          <div className="mb-4">
+            <h2 className="text-xl font-semibold text-white">
+              {meta.icon} {meta.label}
+            </h2>
+            {meta.desc && <p className="mt-0.5 text-sm text-white/45">{meta.desc}</p>}
+          </div>
+
+          {tab === 'jobs' && <JobsTab />}
+          {tab === 'hero' && <HeroTab />}
+          {tab === 'clips' && <ClipsTab />}
+          {tab === 'lives' && <LivesTab />}
+          {tab === 'track' && <TrackTab />}
+          {tab === 'chars' && <CharsTab />}
+          {tab === 'quotes' && <QuotesTab />}
+          {tab === 'works' && <WorksTab />}
+          {tab === 'mascot' && <MascotTab />}
+          {tab === 'assets' && <AssetsTab />}
+          {tab === 'shop' && <ShopTab />}
+          {tab === 'news' && <NewsTab />}
+          {tab === 'topic' && <TopicTab />}
+          {tab === 'creds' && <CredsTab />}
+          {tab === 'system' && <SystemTab />}
+        </main>
+      </div>
     </div>
   );
 }
 
-function Sec({ title, children }: { title: string; children: ReactNode }) {
+function NavGroups({
+  tab,
+  setTab,
+  collapsed,
+}: {
+  tab: string;
+  setTab: (v: string) => void;
+  collapsed?: boolean;
+}) {
   return (
-    <section className="mb-8">
-      <h2 className="mb-3 text-base font-semibold text-emerald-300">{title}</h2>
+    <div className="flex flex-col gap-4">
+      {NAV_GROUPS.map((g) => (
+        <div key={g.label}>
+          {!collapsed && (
+            <div className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-white/30">
+              {g.label}
+            </div>
+          )}
+          <div className="flex flex-col gap-0.5">
+            {g.items.map((id) => {
+              const t = tabMeta(id);
+              const active = tab === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setTab(id)}
+                  title={collapsed ? t.label : undefined}
+                  className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition ${
+                    active
+                      ? 'bg-emerald-500/15 text-emerald-200'
+                      : 'text-white/60 hover:bg-white/5 hover:text-white'
+                  } ${collapsed ? 'justify-center' : ''}`}
+                >
+                  <span className="text-base leading-none">{t.icon}</span>
+                  {!collapsed && <span className="truncate">{t.label}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LoadingBar() {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const fn = (v: number) => setN(v);
+    loadBus.add(fn);
+    return () => {
+      loadBus.delete(fn);
+    };
+  }, []);
+  if (n <= 0) return null;
+  return (
+    <div className="fixed inset-x-0 top-0 z-[70]">
+      <div className="h-0.5 w-full animate-pulse bg-emerald-400/90" />
+    </div>
+  );
+}
+
+function AskModal() {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    const fn = (q: string | null) => setText(q);
+    askBus.add(fn);
+    return () => {
+      askBus.delete(fn);
+    };
+  }, []);
+  useEffect(() => {
+    if (!text) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') settleAsk(false);
+      if (e.key === 'Enter') settleAsk(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [text]);
+  if (!text) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[65] flex items-center justify-center bg-black/60 p-4"
+      onClick={() => settleAsk(false)}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-white/10 bg-neutral-900 p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="whitespace-pre-line text-sm leading-relaxed text-white/90">{text}</div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            onClick={() => settleAsk(false)}
+            className="rounded-lg border border-white/15 px-4 py-2 text-sm text-white/70 transition hover:bg-white/10"
+          >
+            取消
+          </button>
+          <button
+            onClick={() => settleAsk(true)}
+            autoFocus
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500"
+          >
+            确定
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Toaster() {
+  const [items, setItems] = useState<ToastItem[]>([]);
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const fn = (t: ToastItem) => {
+      setItems((s) => [...s, t]);
+      timers.push(
+        setTimeout(() => setItems((s) => s.filter((x) => x.id !== t.id)), t.kind === 'err' ? 5200 : 2800),
+      );
+    };
+    toastBus.add(fn);
+    return () => {
+      toastBus.delete(fn);
+      timers.forEach(clearTimeout);
+    };
+  }, []);
+  if (!items.length) return null;
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-5 z-[60] flex flex-col items-center gap-2 px-4">
+      {items.map((t) => (
+        <div
+          key={t.id}
+          className={`pointer-events-auto max-w-md rounded-xl border px-4 py-2.5 text-sm shadow-lg backdrop-blur transition ${
+            t.kind === 'err'
+              ? 'border-red-400/40 bg-red-950/85 text-red-100'
+              : t.kind === 'ok'
+                ? 'border-emerald-400/40 bg-emerald-950/85 text-emerald-100'
+                : 'border-white/15 bg-neutral-900/90 text-white/90'
+          }`}
+        >
+          {t.text}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 列表快速搜索：按 JSON 序列化后全文匹配，免配置、任意字段都能搜到
+function quickFilter<T>(rows: T[], q: string): T[] {
+  const k = q.trim().toLowerCase();
+  if (!k) return rows;
+  return rows.filter((r) => JSON.stringify(r ?? '').toLowerCase().includes(k));
+}
+
+function SearchBox({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40">⌕</span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder ?? '搜索…'}
+        className="w-44 rounded-lg border border-white/15 bg-black/40 py-1.5 pl-8 pr-7 text-sm text-white outline-none focus:border-emerald-500/60"
+      />
+      {value && (
+        <button
+          onClick={() => onChange('')}
+          title="清除"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded px-1 text-white/40 transition hover:text-white"
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Sec({
+  title,
+  desc,
+  right,
+  children,
+}: {
+  title: string;
+  desc?: ReactNode;
+  right?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="mb-7">
+      <div className="mb-3 flex items-center gap-3">
+        <h3 className="shrink-0 text-sm font-semibold uppercase tracking-wide text-emerald-300">
+          {title}
+        </h3>
+        {desc && <span className="shrink-0 text-xs text-white/40">{desc}</span>}
+        <span className="h-px flex-1 bg-white/10" />
+        {right && <span className="shrink-0">{right}</span>}
+      </div>
       {children}
     </section>
   );
@@ -195,12 +563,12 @@ function JobsTab() {
     if (r.ok) refresh();
   }
   async function del(j: any) {
-    if (!confirm(`删除任务「${j.name}」？`)) return;
+    if (!(await ask(`删除任务「${j.name}」？`))) return;
     await api(`/api/admin/jobs/${j.id}`, { method: 'DELETE' });
     refresh();
   }
   async function stopRun(id: number) {
-    if (!window.confirm(`确认停止运行记录 #${id}？`)) return;
+    if (!(await ask(`确认停止运行记录 #${id}？`))) return;
     const r = await api(`/api/admin/job-runs/${id}`, { method: 'POST' });
     setErr(r.ok ? `已发送停止信号（#${id}）` : r.error || '停止失败');
     if (r.ok) {
@@ -499,7 +867,7 @@ function ClipsTab() {
   }
 
   async function remove(bvid: string) {
-    if (!confirm(`确认删除并拉黑该切片（${bvid}）？\n拉黑后收集与展示都会跳过，且下次同步不会再次收集。`))
+    if (!(await ask(`确认删除并拉黑该切片（${bvid}）？\n拉黑后收集与展示都会跳过，且下次同步不会再次收集。`)))
       return;
     const r = await api('/api/admin/clips', {
       method: 'DELETE',
@@ -513,7 +881,7 @@ function ClipsTab() {
     if (r.ok) setBlockedUps(r.list || []);
   }
   async function blockUpAuthor(author: string) {
-    if (!confirm(`确认拉黑 UP 主「${author}」？\n将删除其全部已有切片，且下次收集会跳过该 UP。`))
+    if (!(await ask(`确认拉黑 UP 主「${author}」？\n将删除其全部已有切片，且下次收集会跳过该 UP。`)))
       return;
     const r = await api('/api/admin/blocked-ups', {
       method: 'POST',
@@ -526,7 +894,7 @@ function ClipsTab() {
     }
   }
   async function unblockUpAuthor(author: string) {
-    if (!confirm(`确认解除拉黑 UP 主「${author}」？\n之后收集可重新收录该 UP。`))
+    if (!(await ask(`确认解除拉黑 UP 主「${author}」？\n之后收集可重新收录该 UP。`)))
       return;
     const r = await api(`/api/admin/blocked-ups?author=${encodeURIComponent(author)}`, {
       method: 'DELETE',
@@ -942,6 +1310,39 @@ function LivesTab() {
   const [rtDetail, setRtDetail] = useState<any>(null);
   const [rtDetailId, setRtDetailId] = useState('');
   const [sel, setSel] = useState<Set<string>>(new Set());
+  const [catMsg, setCatMsg] = useState('');
+  const [page, setPage] = useState(0);
+
+  // 按回放标题自动归类：预览 / 应用
+  const previewCategories = async () => {
+    setCatMsg('统计中…');
+    const r = await api('/api/admin/lives/reclassify');
+    if (!r.ok) {
+      setCatMsg('预览失败');
+      return;
+    }
+    const s = Object.entries(r.summary || {})
+      .map(([k, v]) => `${CAT_LABEL[k] ?? k} ${v}`)
+      .join(' · ');
+    setCatMsg(`共 ${r.total} 场 → ${s}`);
+  };
+  const applyCategories = async (overwrite: boolean) => {
+    if (
+      !(await ask(
+        overwrite
+          ? '将按标题重新自动归类，覆盖全部已有的人工标记，确定？'
+          : '将按标题自动归类，仅填补尚未人工标记的场次，确定？',
+      ))
+    )
+      return;
+    setCatMsg('写入中…');
+    const r = await api('/api/admin/lives/reclassify', {
+      method: 'POST',
+      body: JSON.stringify({ overwrite }),
+    });
+    setCatMsg(r.ok ? `已写入 ${r.changed} 场，刷新列表中…` : '应用失败');
+    refresh();
+  };
 
   const allSel = rtSessions.length > 0 && rtSessions.every((s) => sel.has(String(s.id)));
   const toggleAllSel = () =>
@@ -955,7 +1356,7 @@ function LivesTab() {
     });
   const exportLive = async () => {
     if (sel.size === 0) {
-      alert('请先勾选要导出的直播场次');
+      toast('请先勾选要导出的直播场次', 'err');
       return;
     }
     try {
@@ -965,7 +1366,7 @@ function LivesTab() {
         body: JSON.stringify({ ids: [...sel] }),
       });
       if (!res.ok) {
-        alert('导出失败：' + res.status);
+        toast('导出失败：' + res.status, 'err');
         return;
       }
       const blob = await res.blob();
@@ -976,7 +1377,7 @@ function LivesTab() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert('导出出错：' + (e as Error).message);
+      toast('导出出错：' + (e as Error).message, 'err');
     }
   };
   const [rtDetailLoading, setRtDetailLoading] = useState(false);
@@ -1025,6 +1426,11 @@ function LivesTab() {
     return () => clearInterval(t);
   }, [refresh, loadRt, loadMonitor]);
 
+  const PAGE_SIZE = 20;
+  const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  const safePage = Math.min(Math.max(page, 0), totalPages - 1);
+  const paged = list.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
   async function openDetail(bvid: string) {
     const r = await api(`/api/admin/lives/${bvid}`);
     setOpen(r.session);
@@ -1066,7 +1472,7 @@ function LivesTab() {
       body: JSON.stringify({ action }),
     });
     setBusy('');
-    alert(r.ok ? `已启动「${action}」全量（运行记录 #${r.runId}），可在“任务调度”查看进度` : r.error);
+    toast(r.ok ? `已启动「${action}」全量（运行记录 #${r.runId}），可在“任务调度”查看进度` : r.error, r.ok ? 'ok' : 'err');
   }
   async function saveMeta() {
     const r = await api(`/api/admin/lives/${open.bvid}`, {
@@ -1083,13 +1489,13 @@ function LivesTab() {
       method: 'POST',
       body: JSON.stringify({ action: 'scan' }),
     });
-    alert(r.ok ? `已启动歌单识别（运行记录 #${r.runId}）` : r.error);
+    toast(r.ok ? `已启动歌单识别（运行记录 #${r.runId}）` : r.error, r.ok ? 'ok' : 'err');
   }
   async function collectDanmaku() {
     const r = await api(`/api/admin/lives/${open.bvid}/danmaku`, {
       method: 'POST',
     });
-    alert(r.ok ? `已启动弹幕收集（运行记录 #${r.runId}），可在“任务调度”查看进度` : r.error);
+    toast(r.ok ? `已启动弹幕收集（运行记录 #${r.runId}），可在“任务调度”查看进度` : r.error, r.ok ? 'ok' : 'err');
   }
   async function addSong() {
     const r = await api(`/api/admin/lives/${open.bvid}/songs`, {
@@ -1459,12 +1865,33 @@ function LivesTab() {
           {busy === 'danmaku' ? '采集中…' : '收集全部弹幕'}
         </button>
       </div>
-      <Sec title="直播回放列表">
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-white/10 bg-black/30 p-3">
+        <span className="text-sm text-white/70">标题自动归类</span>
+        <button
+          onClick={previewCategories}
+          className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-white/70 hover:bg-white/10"
+        >
+          预览归类结果
+        </button>
+        <button
+          onClick={() => applyCategories(false)}
+          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-500"
+        >
+          应用（仅补空缺）
+        </button>
+        <button
+          onClick={() => applyCategories(true)}
+          className="rounded-lg border border-amber-500/40 px-3 py-1.5 text-sm text-amber-300 hover:bg-amber-500/20"
+        >
+          覆盖全部重写
+        </button>
+        {catMsg && <span className="text-xs text-white/60">{catMsg}</span>}
+      </div>
+      <Sec title={`直播回放列表（共 ${list.length} 场）`}>
         <div className="max-h-[40vh] overflow-auto rounded-lg border border-white/10">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-neutral-900 text-white/50">
               <tr className="text-left">
-                <th className="py-2 px-2">房间</th>
                 <th className="py-2 px-2">标题</th>
                 <th className="px-2">自动分类</th>
                 <th className="px-2">人工分类</th>
@@ -1481,16 +1908,28 @@ function LivesTab() {
               </tr>
             </thead>
             <tbody>
-              {list.map((l) => (
+              {paged.map((l) => (
                 <tr key={l.bvid} className="border-b border-white/5">
                   <td className="px-2 max-w-[36vw] truncate">{l.title}</td>
-                  <td className="px-2 text-white/60">{l.category}</td>
-                  <td className="px-2 text-emerald-300">{l.categoryManual || '—'}</td>
+                  <td className="px-2 text-white/60">
+                    {CAT_LABEL[l.category] ?? l.category ?? '—'}
+                  </td>
+                  <td className="px-2 text-emerald-300">
+                    {l.categoryManual ? CAT_LABEL[l.categoryManual] ?? l.categoryManual : '—'}
+                  </td>
                   <td className="px-2">{(l.durationSec / 60).toFixed(0)}</td>
                   <td className="px-2">{l.songCount}</td>
                   <td className="px-2">{l.checked ? '✅' : '⛔'}</td>
                   <td className="px-2">
-                    {l.dmCollected > 0 ? (
+                    {/* 弹幕以实时采集数为准（与顶部同步记录一致）；未匹配到监控场次时回退到已收集/B站数 */}
+                    {l.rtDanmaku != null ? (
+                      <span className="text-emerald-300">
+                        {nf(l.rtDanmaku)}
+                        {l.dmCollected > 0 ? (
+                          <span className="text-white/40"> · 存档 {l.dmCollected}</span>
+                        ) : null}
+                      </span>
+                    ) : l.dmCollected > 0 ? (
                       <span className="text-emerald-300">
                         已收集 {l.dmCollected}
                         {l.danmaku ? <span className="text-white/40"> / {l.danmaku}</span> : null}
@@ -1514,6 +1953,62 @@ function LivesTab() {
             </tbody>
           </table>
         </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="text-white/50">
+            共 {list.length} 场 · 第 {safePage + 1} / {totalPages} 页
+          </span>
+          <div className="flex flex-wrap items-center gap-1">
+            <button
+              onClick={() => setPage(0)}
+              disabled={safePage === 0}
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-white/80 hover:bg-white/10 disabled:opacity-30"
+            >
+              首页
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={safePage === 0}
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-white/80 hover:bg-white/10 disabled:opacity-30"
+            >
+              上一页
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={safePage >= totalPages - 1}
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-white/80 hover:bg-white/10 disabled:opacity-30"
+            >
+              下一页
+            </button>
+            <button
+              onClick={() => setPage(totalPages - 1)}
+              disabled={safePage >= totalPages - 1}
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-white/80 hover:bg-white/10 disabled:opacity-30"
+            >
+              末页
+            </button>
+            <span className="ml-2 flex items-center gap-1 text-white/60">
+              跳至
+              <input
+                type="number"
+                min={1}
+                max={totalPages}
+                defaultValue={safePage + 1}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const v = Math.min(totalPages, Math.max(1, Number((e.target as HTMLInputElement).value)));
+                    setPage(v - 1);
+                  }
+                }}
+                onBlur={(e) => {
+                  const v = Math.min(totalPages, Math.max(1, Number(e.target.value)));
+                  setPage(v - 1);
+                }}
+                className="w-14 rounded-lg border border-white/15 bg-black/40 px-2 py-1 text-center text-white"
+              />
+              页
+            </span>
+          </div>
+        </div>
         <p className="mt-2 text-xs text-white/40">
           弹幕：来自回放视频弹幕（点「收集全部弹幕」补全）。人气峰值 / SC / 礼物 / 流水 / 互动：来自
           <code className="text-white/50"> live-monitor </code>
@@ -1533,9 +2028,14 @@ function LivesTab() {
                   className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 px-2 py-1 text-white"
                 >
                   <option value="">（自动）</option>
-                  <option value="sing">唱歌回</option>
+                  <option value="official">官方活动回</option>
+                  <option value="sing">歌回</option>
+                  <option value="special">特殊回</option>
+                  <option value="collab">联动回</option>
+                  <option value="marshmallow">棉花糖回</option>
                   <option value="game">游戏回</option>
-                  <option value="other">其他</option>
+                  <option value="talk">杂谈回</option>
+                  <option value="other">其他（自动归类）</option>
                 </select>
               </label>
               <label className="text-sm text-white/70">
@@ -1569,12 +2069,17 @@ function LivesTab() {
             </div>
             <div className="mb-3 text-sm">
               弹幕：
-              {open.dmCollected > 0 ? (
+              {open.rtDanmaku != null ? (
+                <span className="text-emerald-300">实时采集 {nf(open.rtDanmaku)} 条</span>
+              ) : open.dmCollected > 0 ? (
                 <span className="text-emerald-300">已收集 {open.dmCollected} 条</span>
               ) : (
                 <span className="text-red-400">未收集</span>
               )}
               {open.danmaku ? <span className="text-white/40">（B站共 {open.danmaku} 条）</span> : null}
+              {open.rtDanmaku != null && open.dmCollected > 0 ? (
+                <span className="text-white/40"> · 存档 {open.dmCollected} 条</span>
+              ) : null}
               {open.dmCollected > 0 && open.danmaku && open.dmCollected < open.danmaku ? (
                 <span className="text-amber-300"> · 可能不完整，可重新收集</span>
               ) : null}
@@ -1679,7 +2184,7 @@ function LivesTab() {
                 弹幕预览（已收集 {open.dmCollected} 条 / B站共 {open.danmaku || 0} 条，展示 {dmTotal} 条）
               </h3>
               <p className="mb-2 text-xs text-white/40">
-                注：B站弹幕接口只返回发送者的匿名哈希（非真实 UID），无法对应到具体昵称；同一哈希即同一匿名用户，可据此做“发送人排行”。
+                注：B站弹幕接口只返回发送者的匿名哈希；系统会用实时监控数据自动回填真实昵称（任务：弹幕身份回填），未匹配到的仍显示哈希。同一哈希即同一匿名用户。
               </p>
               <div className="mb-2 flex gap-2">
                 <input
@@ -1714,7 +2219,18 @@ function LivesTab() {
                       <tr key={d.dmid} className="border-b border-white/5">
                         <td className="w-20 px-2 text-white/40">{fmtTime(d.vtime)}</td>
                         <td className="px-2 text-white/80">{d.text}</td>
-                        <td className="w-28 px-2 text-right font-mono text-xs text-white/50">{d.sender || '—'}</td>
+                        <td className="w-40 px-2 text-right text-xs">
+                          {d.senderName ? (
+                            <span className="text-white/80">
+                              {d.senderName}
+                              {d.senderUid != null && (
+                                <span className="ml-1 text-white/40">({d.senderUid})</span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="font-mono text-white/50">{d.sender || '—'}</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                     {dm.length === 0 && (
@@ -1724,12 +2240,19 @@ function LivesTab() {
                 </table>
               </div>
 
-              <h4 className="mb-2 mt-4 text-sm font-semibold text-sky-300">本场发送人排行（按条数，匿名）</h4>
+              <h4 className="mb-2 mt-4 text-sm font-semibold text-sky-300">本场发送人排行（按条数）</h4>
               <div className="grid max-h-[24vh] grid-cols-2 gap-x-6 gap-y-1 overflow-auto pr-2 sm:grid-cols-3">
                 {dmSenders.slice(0, 60).map((s, i) => (
                   <div key={s.sender} className="flex items-center justify-between text-xs">
                     <span className="text-white/40">{i + 1}.</span>
-                    <span className="mx-1 flex-1 truncate font-mono text-white/50">{s.sender}</span>
+                    {s.senderName ? (
+                      <span className="mx-1 flex-1 truncate text-white/80">
+                        {s.senderName}
+                        {s.senderUid != null && <span className="text-white/40"> ({s.senderUid})</span>}
+                      </span>
+                    ) : (
+                      <span className="mx-1 flex-1 truncate font-mono text-white/50">{s.sender}</span>
+                    )}
                     <span className="text-sky-300">{s.count}</span>
                   </div>
                 ))}
@@ -1775,6 +2298,1448 @@ function RtOnlineChart({ data }: { data: { ts: number; online: number }[] }) {
         <text x={pad - 4} y={H - pad} fill="#ffffff66" fontSize={10} textAnchor="end">{oMin.toLocaleString()}</text>
         <text x={pad - 4} y={pad + 4} fill="#ffffff66" fontSize={10} textAnchor="end">{oMax.toLocaleString()}</text>
       </svg>
+    </div>
+  );
+}
+
+// ---------------- 首页语录 ----------------
+// ---------- 首页文案 ----------
+function HeroTab() {
+  const [name, setName] = useState('');
+  const [badges, setBadges] = useState('');
+  const [defaultQuote, setDefaultQuote] = useState('');
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    api('/api/admin/hero')
+      .then((r) => {
+        if (r.ok && r.config) {
+          setName(r.config.name ?? '');
+          setBadges((r.config.badges ?? []).join(' | '));
+          setDefaultQuote(r.config.defaultQuote ?? '');
+          setLoaded(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  async function save() {
+    const r = await api('/api/admin/hero', {
+      method: 'PUT',
+      body: JSON.stringify({ name, badges, defaultQuote }),
+    });
+    if (r.ok) {
+      toast('首页文案已保存，刷新前台即可生效', 'ok');
+    } else {
+      toast(r.error || '保存失败', 'err');
+    }
+  }
+
+  return (
+    <div>
+      <Sec title="编辑首页文案" desc="对应首页 hero 区展示，留空则保持原值">
+        {loaded ? (
+          <div className="flex max-w-3xl flex-col gap-4">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm text-white/60">名字</span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm text-white/60">粉丝牌 / 标签（用竖线 | 分隔多个）</span>
+              <input
+                value={badges}
+                onChange={(e) => setBadges(e.target.value)}
+                placeholder="🎋 粉丝牌 · Kimo熊 | P-SP | #大熊猫豆漫#"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm text-white/60">默认人设句（语录库为空时显示）</span>
+              <input
+                value={defaultQuote}
+                onChange={(e) => setDefaultQuote(e.target.value)}
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+              />
+            </label>
+            <div>
+              <button
+                onClick={save}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-white transition hover:bg-emerald-500"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-sm text-white/40">加载中…</div>
+        )}
+      </Sec>
+      <Sec title="说明">
+        <p className="max-w-3xl text-sm leading-relaxed text-white/50">
+          这里只管理首页首屏（头像下方）的名字、粉丝牌标签行和默认一句话人设。
+          语录库内容请到「首页语录」管理；粉丝数与开播状态来自 B站接口，自动更新。
+        </p>
+      </Sec>
+    </div>
+  );
+}
+
+function QuotesTab() {
+  const [list, setList] = useState<any[]>([]);
+  const [text, setText] = useState('');
+  const [msg, setMsg] = useState('');
+  const [editing, setEditing] = useState<number | null>(null);
+  const [editText, setEditText] = useState('');
+  const [qs, setQs] = useState('');
+
+  const refresh = useCallback(async () => {
+    const r = await api('/api/admin/quotes');
+    setList(r.list || []);
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  async function add() {
+    const t = text.trim();
+    if (!t) return;
+    const r = await api('/api/admin/quotes', { method: 'POST', body: JSON.stringify({ text: t }) });
+    if (r.ok) {
+      setText('');
+      setMsg('');
+      refresh();
+    } else {
+      setMsg(r.error || '新增失败');
+    }
+  }
+  async function saveEdit(id: number) {
+    const t = editText.trim();
+    if (!t) return;
+    const r = await api('/api/admin/quotes', { method: 'PUT', body: JSON.stringify({ id, text: t }) });
+    if (r.ok) {
+      setEditing(null);
+      setMsg('');
+      refresh();
+    } else {
+      setMsg(r.error || '保存失败');
+    }
+  }
+  async function toggle(id: number, enabled: boolean) {
+    await api('/api/admin/quotes', { method: 'PUT', body: JSON.stringify({ id, enabled }) });
+    refresh();
+  }
+  async function del(id: number) {
+    if (!(await ask('确定删除这条语录？'))) return;
+    await api(`/api/admin/quotes/${id}`, { method: 'DELETE' });
+    refresh();
+  }
+
+  const shown = quickFilter(list, qs);
+
+  return (
+    <div>
+      <Sec title="新增语录">
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            placeholder="一句话内容（无需带「」）"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && add()}
+            className="w-96 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+          />
+          <button onClick={add} className="rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-500">
+            添加
+          </button>
+          {msg && <span className="text-xs text-red-300">{msg}</span>}
+        </div>
+        <p className="mt-2 text-xs text-white/40">
+          首页 hero 区每次刷新随机展示一条“启用中”的语录；库为空时显示默认句。
+        </p>
+      </Sec>
+      <Sec
+        title={`语录列表（${shown.length}${shown.length !== list.length ? ` / ${list.length}` : ''}）`}
+        right={<SearchBox value={qs} onChange={setQs} placeholder="搜索语录" />}
+      >
+        <div className="flex flex-col gap-2">
+          {shown.map((q) => (
+            <div key={q.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-white/10 p-3">
+              {editing === q.id ? (
+                <>
+                  <input
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && saveEdit(q.id)}
+                    className="flex-1 min-w-64 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+                    autoFocus
+                  />
+                  <button onClick={() => saveEdit(q.id)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-500">
+                    保存
+                  </button>
+                  <button onClick={() => setEditing(null)} className="rounded-lg border border-white/20 px-3 py-1.5 text-xs text-white/70 hover:bg-white/10">
+                    取消
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className={`flex-1 min-w-64 break-words text-sm ${q.enabled ? 'text-white/90' : 'text-white/35 line-through'}`}>
+                    「{q.text}」
+                  </span>
+                  <button
+                    onClick={() => toggle(q.id, !q.enabled)}
+                    className={`rounded-full px-3 py-1 text-xs ${
+                      q.enabled ? 'bg-emerald-900/60 text-emerald-200' : 'bg-white/10 text-white/50'
+                    }`}
+                  >
+                    {q.enabled ? '启用中' : '已停用'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditing(q.id);
+                      setEditText(q.text);
+                    }}
+                    className="text-xs text-sky-300 hover:underline"
+                  >
+                    编辑
+                  </button>
+                  <button onClick={() => del(q.id)} className="text-xs text-red-300 hover:underline">
+                    删除
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+          {list.length === 0 && <p className="text-white/40">还没有语录，添加后首页将随机展示。</p>}
+        </div>
+      </Sec>
+    </div>
+  );
+}
+
+// ---------------- 豆沙作品 ----------------
+function WorksTab() {
+  const [list, setList] = useState<any[]>([]);
+  const [form, setForm] = useState({ url: '', title: '', description: '' });
+  const [msg, setMsg] = useState('');
+  const [editing, setEditing] = useState<any | null>(null);
+  const [qs, setQs] = useState('');
+
+  const refresh = useCallback(async () => {
+    const r = await api('/api/admin/works');
+    setList(r.list || []);
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  async function add() {
+    if (!form.url.trim()) {
+      setMsg('链接不能为空');
+      return;
+    }
+    setMsg('保存中…（BV 号会自动抓取标题/封面）');
+    const r = await api('/api/admin/works', { method: 'POST', body: JSON.stringify(form) });
+    if (r.ok) {
+      setForm({ url: '', title: '', description: '' });
+      setMsg('');
+      refresh();
+    } else {
+      setMsg(r.error || '新增失败');
+    }
+  }
+  async function saveEdit() {
+    if (!editing) return;
+    const r = await api('/api/admin/works', {
+      method: 'PUT',
+      body: JSON.stringify({
+        id: editing.id,
+        title: editing.title,
+        url: editing.url,
+        description: editing.description,
+        cover: editing.cover,
+      }),
+    });
+    if (r.ok) {
+      setEditing(null);
+      setMsg('');
+      refresh();
+    } else {
+      setMsg(r.error || '保存失败');
+    }
+  }
+  async function del(id: number) {
+    if (!(await ask('确定删除这个作品？'))) return;
+    await api(`/api/admin/works/${id}`, { method: 'DELETE' });
+    refresh();
+  }
+  async function refetch(id: number) {
+    setMsg('重新抓取中…');
+    const r = await api('/api/admin/works', {
+      method: 'PUT',
+      body: JSON.stringify({ id, refetch: true }),
+    });
+    setMsg(r.ok ? '' : r.error || '抓取失败');
+    refresh();
+  }
+
+  const shown = quickFilter(list, qs);
+
+  return (
+    <div>
+      <Sec title="新增作品">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              placeholder="B站链接或 BV 号（如 BV1Z2bpznEag），自动补全信息"
+              value={form.url}
+              onChange={(e) => setForm({ ...form, url: e.target.value })}
+              className="w-96 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+            />
+            <input
+              placeholder="标题（留空自动抓取）"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              className="w-64 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+            />
+            <button onClick={add} className="rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-500">
+              添加
+            </button>
+          </div>
+          <input
+            placeholder="简介（可选，留空自动抓取）"
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+          />
+          {msg && <span className="text-xs text-amber-300">{msg}</span>}
+        </div>
+        <p className="mt-2 text-xs text-white/40">作品展示在「熊猫活动轨迹」页的「豆沙作品」栏。</p>
+      </Sec>
+      <Sec
+        title={`作品列表（${shown.length}${shown.length !== list.length ? ` / ${list.length}` : ''}）`}
+        right={<SearchBox value={qs} onChange={setQs} placeholder="搜索作品" />}
+      >
+        <div className="flex flex-col gap-2">
+          {shown.map((w) => (
+            <div key={w.id} className="rounded-lg border border-white/10 p-3">
+              {editing?.id === w.id ? (
+                <div className="flex flex-col gap-2">
+                  <input
+                    value={editing.title}
+                    onChange={(e) => setEditing({ ...editing, title: e.target.value })}
+                    placeholder="标题"
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+                  />
+                  <input
+                    value={editing.url}
+                    onChange={(e) => setEditing({ ...editing, url: e.target.value })}
+                    placeholder="链接"
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+                  />
+                  <input
+                    value={editing.cover || ''}
+                    onChange={(e) => setEditing({ ...editing, cover: e.target.value })}
+                    placeholder="封面图 URL（可留空）"
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+                  />
+                  <textarea
+                    value={editing.description || ''}
+                    onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+                    placeholder="简介"
+                    rows={2}
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+                  />
+                  <div className="flex gap-3">
+                    <button onClick={saveEdit} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-500">
+                      保存
+                    </button>
+                    <button onClick={() => setEditing(null)} className="rounded-lg border border-white/20 px-3 py-1.5 text-xs text-white/70 hover:bg-white/10">
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-3">
+                  {w.cover && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={w.cover} alt="" className="h-12 w-20 rounded object-cover" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm text-white/90">{w.title}</div>
+                    <a href={w.url} target="_blank" rel="noreferrer" className="truncate text-xs text-white/40 hover:text-brand-200">
+                      {w.url}
+                    </a>
+                  </div>
+                  <button
+                    onClick={() => refetch(w.id)}
+                    className="text-xs text-amber-300 hover:underline"
+                    title="重新从B站抓取标题/封面/简介"
+                  >
+                    重新抓取
+                  </button>
+                  <button
+                    onClick={() => setEditing({ ...w })}
+                    className="text-xs text-sky-300 hover:underline"
+                  >
+                    编辑
+                  </button>
+                  <button onClick={() => del(w.id)} className="text-xs text-red-300 hover:underline">
+                    删除
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+          {list.length === 0 && <p className="text-white/40">还没有作品，粘贴 BV 号添加。</p>}
+        </div>
+      </Sec>
+    </div>
+  );
+}
+
+// ---------------- 小人台词 ----------------
+const emptyMascot = {
+  text: '',
+  weight: 1,
+  timeStart: '',
+  timeEnd: '',
+  dates: '',
+  onlyLive: false,
+};
+
+function MascotTab() {
+  const [list, setList] = useState<any[]>([]);
+  const [form, setForm] = useState({ ...emptyMascot });
+  const [editing, setEditing] = useState<any | null>(null);
+  const [msg, setMsg] = useState('');
+  const [model, setModel] = useState({ url: '', scale: 1 });
+  const [qs, setQs] = useState('');
+  const shown = quickFilter(list, qs);
+
+  const refresh = useCallback(async () => {
+    const r = await api('/api/admin/mascot');
+    setList(r.list || []);
+  }, []);
+  useEffect(() => {
+    refresh();
+    api('/api/admin/mascot-config').then((r) =>
+      setModel({ url: r.url || '', scale: r.scale || 1 }),
+    );
+  }, [refresh]);
+
+  async function saveModel() {
+    const r = await api('/api/admin/mascot-config', {
+      method: 'POST',
+      body: JSON.stringify(model),
+    });
+    setMsg(r.ok ? '模型配置已保存，刷新前台页面生效' : '保存失败');
+  }
+
+  async function add() {
+    if (!form.text.trim()) {
+      setMsg('台词不能为空');
+      return;
+    }
+    const r = await api('/api/admin/mascot', { method: 'POST', body: JSON.stringify(form) });
+    if (r.ok) {
+      setForm({ ...emptyMascot });
+      setMsg('');
+      refresh();
+    } else {
+      setMsg(r.error || '新增失败');
+    }
+  }
+  async function saveEdit() {
+    if (!editing) return;
+    const r = await api('/api/admin/mascot', { method: 'PUT', body: JSON.stringify(editing) });
+    if (r.ok) {
+      setEditing(null);
+      setMsg('');
+      refresh();
+    } else {
+      setMsg(r.error || '保存失败');
+    }
+  }
+  async function toggle(id: number, enabled: boolean) {
+    await api('/api/admin/mascot', { method: 'PUT', body: JSON.stringify({ id, enabled }) });
+    refresh();
+  }
+  async function del(id: number) {
+    if (!(await ask('确定删除这条台词？'))) return;
+    await api(`/api/admin/mascot/${id}`, { method: 'DELETE' });
+    refresh();
+  }
+  const condText = (l: any) => {
+    const parts: string[] = [];
+    if (l.time_start || l.time_end)
+      parts.push(`${l.time_start || '00:00'}~${l.time_end || '24:00'}`);
+    if (l.dates) parts.push(`日期 ${l.dates}`);
+    if (l.only_live) parts.push('仅直播中');
+    parts.push(`权重 ${l.weight}`);
+    return parts.join(' · ');
+  };
+
+  const timeInputs = (obj: any, set: (v: any) => void) => (
+    <>
+      <input
+        placeholder="开始 HH:MM"
+        value={obj.timeStart}
+        onChange={(e) => set({ ...obj, timeStart: e.target.value })}
+        className="w-28 rounded-lg border border-white/15 bg-black/40 px-2 py-1.5 text-sm text-white"
+      />
+      <span className="text-white/40">~</span>
+      <input
+        placeholder="结束 HH:MM"
+        value={obj.timeEnd}
+        onChange={(e) => set({ ...obj, timeEnd: e.target.value })}
+        className="w-28 rounded-lg border border-white/15 bg-black/40 px-2 py-1.5 text-sm text-white"
+      />
+    </>
+  );
+
+  return (
+    <div>
+      <Sec title="Live2D 模型">
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            placeholder="模型路径或 URL，如 /live2d/dousha/model.model3.json"
+            value={model.url}
+            onChange={(e) => setModel({ ...model, url: e.target.value })}
+            className="w-96 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+          />
+          <label className="text-sm text-white/70">
+            缩放
+            <input
+              type="number"
+              step={0.1}
+              min={0.2}
+              max={4}
+              value={model.scale}
+              onChange={(e) => setModel({ ...model, scale: Number(e.target.value) })}
+              className="ml-2 w-20 rounded-lg border border-white/15 bg-black/40 px-2 py-2 text-sm text-white"
+            />
+          </label>
+          <button onClick={saveModel} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500">
+            保存
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-white/40">
+          把模型文件夹（model3.json + .moc3 + 贴图）放到 <code>public/live2d/</code> 下，再填相对路径即可；
+          留空则使用亚克力立牌图片。模型需为 Cubism 4（.model3.json / .moc3）格式。
+        </p>
+      </Sec>
+      <Sec title="新增台词">
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              placeholder="台词内容（如：中午好呀，记得吃午饭！）"
+              value={form.text}
+              onChange={(e) => setForm({ ...form, text: e.target.value })}
+              onKeyDown={(e) => e.key === 'Enter' && add()}
+              className="w-96 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+            />
+            <input
+              type="number"
+              min={1}
+              max={100}
+              title="权重：越大越常出现"
+              value={form.weight}
+              onChange={(e) => setForm({ ...form, weight: Number(e.target.value) })}
+              className="w-20 rounded-lg border border-white/15 bg-black/40 px-2 py-2 text-sm text-white"
+            />
+            {timeInputs(form, setForm)}
+            <label className="flex items-center gap-1.5 text-sm text-white/70">
+              <input
+                type="checkbox"
+                checked={form.onlyLive}
+                onChange={(e) => setForm({ ...form, onlyLive: e.target.checked })}
+              />
+              仅直播中
+            </label>
+            <button onClick={add} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500">
+              添加
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              placeholder="特定日期 MM-DD，逗号分隔（如 05-20,10-01，留空=每天）"
+              value={form.dates}
+              onChange={(e) => setForm({ ...form, dates: e.target.value })}
+              className="w-96 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+            />
+            {msg && <span className="text-xs text-red-300">{msg}</span>}
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-white/40">
+          示例：「中午好呀」设 11:00~14:00 → 只在中午说；「生日快乐！」设日期 05-20；「来听歌呀」勾选仅直播中。
+          时间支持跨零点（如 22:00~05:00）。
+        </p>
+      </Sec>
+      <Sec
+        title={`台词列表（${shown.length}${shown.length !== list.length ? ` / ${list.length}` : ''}）`}
+        right={<SearchBox value={qs} onChange={setQs} placeholder="搜索台词" />}
+      >
+        <div className="flex flex-col gap-2">
+          {shown.map((l) => (
+            <div key={l.id} className="rounded-lg border border-white/10 p-3">
+              {editing?.id === l.id ? (
+                <div className="flex flex-col gap-2">
+                  <input
+                    value={editing.text}
+                    onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      value={editing.weight}
+                      onChange={(e) => setEditing({ ...editing, weight: Number(e.target.value) })}
+                      className="w-20 rounded-lg border border-white/15 bg-black/40 px-2 py-1.5 text-sm text-white"
+                    />
+                    {timeInputs(editing, setEditing)}
+                    <input
+                      placeholder="MM-DD,MM-DD"
+                      value={editing.dates || ''}
+                      onChange={(e) => setEditing({ ...editing, dates: e.target.value })}
+                      className="w-64 rounded-lg border border-white/15 bg-black/40 px-2 py-1.5 text-sm text-white"
+                    />
+                    <label className="flex items-center gap-1.5 text-sm text-white/70">
+                      <input
+                        type="checkbox"
+                        checked={!!editing.onlyLive}
+                        onChange={(e) => setEditing({ ...editing, onlyLive: e.target.checked })}
+                      />
+                      仅直播中
+                    </label>
+                    <button onClick={saveEdit} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-500">
+                      保存
+                    </button>
+                    <button onClick={() => setEditing(null)} className="rounded-lg border border-white/20 px-3 py-1.5 text-xs text-white/70 hover:bg-white/10">
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className={`min-w-0 flex-1 break-words text-sm ${l.enabled ? 'text-white/90' : 'text-white/35 line-through'}`}>
+                    「{l.text}」
+                  </span>
+                  <span className="text-xs text-white/40">{condText(l)}</span>
+                  <button
+                    onClick={() => toggle(l.id, !l.enabled)}
+                    className={`rounded-full px-3 py-1 text-xs ${
+                      l.enabled ? 'bg-emerald-900/60 text-emerald-200' : 'bg-white/10 text-white/50'
+                    }`}
+                  >
+                    {l.enabled ? '启用中' : '已停用'}
+                  </button>
+                  <button
+                    onClick={() =>
+                      setEditing({
+                        ...l,
+                        timeStart: l.time_start || '',
+                        timeEnd: l.time_end || '',
+                        dates: l.dates || '',
+                      })
+                    }
+                    className="text-xs text-sky-300 hover:underline"
+                  >
+                    编辑
+                  </button>
+                  <button onClick={() => del(l.id)} className="text-xs text-red-300 hover:underline">
+                    删除
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+          {list.length === 0 && <p className="text-white/40">还没有台词，添加后左下角小人就会说话啦。</p>}
+        </div>
+      </Sec>
+    </div>
+  );
+}
+
+// ---------------- 素材库 ----------------
+type CatTuple = [string, string];
+// API 加载前的兜底；实际分类以后台「分类管理」配置为准（内置 + 自定义）
+const FALLBACK_CATS: CatTuple[] = [
+  ['standee_cut', '立绘（抠图）'],
+  ['standee_raw', '立绘（原图）'],
+  ['garb', '装扮素材'],
+  ['emoji', '装扮表情包'],
+  ['cursor', '鼠标指针'],
+  ['ime', '输入法皮肤'],
+  ['other', '其他'],
+];
+
+function AssetsTab() {
+  const [list, setList] = useState<any[]>([]);
+  const [cats, setCats] = useState<CatTuple[]>(FALLBACK_CATS);
+  const [newCat, setNewCat] = useState('');
+  const [catMsg, setCatMsg] = useState('');
+  const [cat, setCat] = useState('standee_cut');
+  const [title, setTitle] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [filter, setFilter] = useState('all');
+  const [msg, setMsg] = useState('');
+  const [editing, setEditing] = useState<any | null>(null);
+  const [qs, setQs] = useState('');
+  const catLabel = Object.fromEntries(cats) as Record<string, string>;
+
+  const refresh = useCallback(async () => {
+    const r = await api('/api/admin/assets');
+    setList(r.list || []);
+    const rc = await api('/api/admin/asset-categories');
+    if (rc.ok && Array.isArray(rc.list)) setCats(rc.list.map((c: any) => [c.key, c.label]));
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  async function addCat() {
+    const label = newCat.trim();
+    if (!label) return;
+    setCatMsg('');
+    const r = await api('/api/admin/asset-categories', {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    });
+    if (r.ok) {
+      setCats((r.list || []).map((c: any) => [c.key, c.label]));
+      setNewCat('');
+    } else {
+      setCatMsg(r.error || '添加失败');
+    }
+  }
+  async function delCat(key: string, label: string) {
+    if (!(await ask(`确定删除分类「${label}」？`))) return;
+    setCatMsg('');
+    const r = await api('/api/admin/asset-categories', {
+      method: 'DELETE',
+      body: JSON.stringify({ key }),
+    });
+    if (r.ok) {
+      setCats((r.list || []).map((c: any) => [c.key, c.label]));
+      if (filter === key || cat === key) {
+        setFilter('all');
+        setCat('other');
+      }
+    } else {
+      setCatMsg(r.error || '删除失败');
+    }
+  }
+
+  async function upload() {
+    if (!file) {
+      setMsg('请选择文件');
+      return;
+    }
+    setMsg('上传中…');
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('category', cat);
+    fd.append('title', title);
+    const res = await fetch('/api/admin/assets', { method: 'POST', credentials: 'include', body: fd });
+    const j = await res.json().catch(() => ({}));
+    if (j.ok) {
+      setFile(null);
+      setTitle('');
+      setMsg('');
+      refresh();
+    } else {
+      setMsg(j.error || '上传失败');
+    }
+  }
+  async function saveEdit() {
+    if (!editing) return;
+    const r = await api('/api/admin/assets', {
+      method: 'PUT',
+      body: JSON.stringify({ id: editing.id, title: editing.title, category: editing.category }),
+    });
+    if (r.ok) {
+      setEditing(null);
+      refresh();
+    } else {
+      setMsg(r.error || '保存失败');
+    }
+  }
+  async function del(a: any) {
+    if (!(await ask(`确定把「${a.title || a.file}」移出素材库？`))) return;
+    await api(`/api/admin/assets/${a.id}`, { method: 'DELETE' });
+    refresh();
+  }
+
+  const shown = quickFilter(filter === 'all' ? list : list.filter((a) => a.category === filter), qs);
+
+  return (
+    <div>
+      <Sec title="分类管理">
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={newCat}
+            onChange={(e) => setNewCat(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addCat()}
+            placeholder="新分类名称"
+            maxLength={20}
+            className="w-48 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+          />
+          <button
+            onClick={addCat}
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-500"
+          >
+            添加分类
+          </button>
+          {catMsg && <span className="text-xs text-amber-300">{catMsg}</span>}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {cats.map(([k, v]) => (
+            <span
+              key={k}
+              className="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 py-1 pl-3 pr-1.5 text-xs text-white/80"
+            >
+              {v}
+              {k.startsWith('c_') && (
+                <button
+                  onClick={() => delCat(k, v)}
+                  title="删除该分类"
+                  className="rounded-full px-1.5 text-red-300 transition hover:bg-red-500/20"
+                >
+                  ×
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-white/40">
+          带 × 的是自定义分类，可删除（分类下仍有素材时需先移走）；内置 7 类不可删除。分类顺序：内置在前，自定义按添加时间排列。
+        </p>
+      </Sec>
+      <Sec title="上传素材">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-sm text-white/70">
+            分类
+            <select
+              value={cat}
+              onChange={(e) => setCat(e.target.value)}
+              className="mt-1 block rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+            >
+              {cats.map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm text-white/70">
+            名称（可选）
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="mt-1 block w-56 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+            />
+          </label>
+          <label className="text-sm text-white/70">
+            文件
+            <input
+              type="file"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              accept=".png,.jpg,.jpeg,.webp,.gif,.svg,.cur,.ani,.zip,.rar,.7z,.json,.ttf,.otf"
+              className="mt-1 block text-white/70"
+            />
+          </label>
+          <button onClick={upload} className="rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-500">
+            上传
+          </button>
+          {msg && <span className="text-xs text-amber-300">{msg}</span>}
+        </div>
+        <p className="mt-2 text-xs text-white/40">
+          支持图片（png/jpg/webp/gif/svg）与非图片素材（鼠标指针 .cur/.ani、输入法皮肤 .zip/.json、字体 .ttf/.otf 等）。
+          上传的文件保存到 /uploads/assets/。
+        </p>
+      </Sec>
+      <Sec
+        title={`素材列表（${shown.length} / ${list.length}）`}
+        right={<SearchBox value={qs} onChange={setQs} placeholder="搜索素材" />}
+      >
+        <div className="mb-3 flex flex-wrap gap-2">
+          <button
+            onClick={() => setFilter('all')}
+            className={`rounded-full px-3 py-1 text-xs ${
+              filter === 'all' ? 'bg-brand-500 text-white' : 'border border-white/15 text-white/60 hover:bg-white/10'
+            }`}
+          >
+            全部
+          </button>
+          {cats.map(([k, v]) => (
+            <button
+              key={k}
+              onClick={() => setFilter(k)}
+              className={`rounded-full px-3 py-1 text-xs ${
+                filter === k ? 'bg-brand-500 text-white' : 'border border-white/15 text-white/60 hover:bg-white/10'
+              }`}
+            >
+              {v} {list.filter((a) => a.category === k).length}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-3 md:grid-cols-6">
+          {shown.map((a) => (
+            <div key={a.id} className="rounded-lg border border-white/10 p-2">
+              {a.kind === 'image' ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={a.file} alt="" className="aspect-square w-full object-contain" />
+              ) : (
+                <div className="flex aspect-square w-full flex-col items-center justify-center gap-1 text-center">
+                  <span className="text-2xl">📦</span>
+                  <span className="break-all text-[10px] text-white/50">{a.file.split('/').pop()}</span>
+                </div>
+              )}
+              {editing?.id === a.id ? (
+                <div className="mt-1 flex flex-col gap-1">
+                  <input
+                    value={editing.title || ''}
+                    onChange={(e) => setEditing({ ...editing, title: e.target.value })}
+                    placeholder="名称"
+                    className="w-full rounded border border-white/15 bg-black/40 px-1.5 py-1 text-xs text-white"
+                  />
+                  <select
+                    value={editing.category}
+                    onChange={(e) => setEditing({ ...editing, category: e.target.value })}
+                    className="w-full rounded border border-white/15 bg-black/40 px-1 py-1 text-xs text-white"
+                  >
+                    {cats.map(([k, v]) => (
+                      <option key={k} value={k}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex gap-1">
+                    <button onClick={saveEdit} className="flex-1 rounded bg-emerald-600 px-1 py-1 text-[10px] text-white">
+                      保存
+                    </button>
+                    <button onClick={() => setEditing(null)} className="flex-1 rounded border border-white/20 px-1 py-1 text-[10px] text-white/70">
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="mt-1 truncate text-xs text-white/70">{a.title || a.file.split('/').pop()}</p>
+                  <p className="text-[10px] text-white/30">{catLabel[a.category] ?? a.category}</p>
+                  <div className="mt-1 flex gap-2">
+                    <button
+                      onClick={() => setEditing({ ...a })}
+                      className="text-xs text-sky-300 hover:underline"
+                    >
+                      编辑
+                    </button>
+                    <button onClick={() => del(a)} className="text-xs text-red-300 hover:underline">
+                      删除
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+          {shown.length === 0 && <p className="text-white/40">暂无素材。</p>}
+        </div>
+      </Sec>
+    </div>
+  );
+}
+
+// ---------------- 商店 ----------------
+function ShopTab() {
+  const [list, setList] = useState<any[]>([]);
+  const [form, setForm] = useState({
+    title: '',
+    url: '',
+    tag: '',
+    description: '',
+    coverUrl: '',
+  });
+  const [cover, setCover] = useState<File | null>(null);
+  const [editing, setEditing] = useState<any | null>(null);
+  const [editCover, setEditCover] = useState<File | null>(null);
+  const [msg, setMsg] = useState('');
+  const [qs, setQs] = useState('');
+  const shown = quickFilter(list, qs);
+
+  const refresh = useCallback(async () => {
+    const r = await api('/api/admin/shop');
+    setList(r.list || []);
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  async function submit(url: string, method: string, body: FormData | string) {
+    const res = await fetch(url, { method, credentials: 'include', body });
+    return res.json().catch(() => ({}));
+  }
+
+  async function add() {
+    if (!form.title.trim() || !form.url.trim()) {
+      setMsg('标题和链接必填');
+      return;
+    }
+    setMsg('保存中…');
+    const fd = new FormData();
+    Object.entries(form).forEach(([k, v]) => fd.append(k, v));
+    if (cover) fd.append('cover', cover);
+    const r = await submit('/api/admin/shop', 'POST', fd);
+    if (r.ok) {
+      setForm({ title: '', url: '', tag: '', description: '', coverUrl: '' });
+      setCover(null);
+      setMsg('');
+      refresh();
+    } else {
+      setMsg(r.error || '新增失败');
+    }
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    const fd = new FormData();
+    fd.append('id', String(editing.id));
+    fd.append('title', editing.title);
+    fd.append('url', editing.url);
+    fd.append('tag', editing.tag || '');
+    fd.append('description', editing.description || '');
+    fd.append('sort_order', String(editing.sort_order ?? 0));
+    fd.append('enabled', String(!!editing.enabled));
+    if (editCover) fd.append('cover', editCover);
+    const r = await submit('/api/admin/shop', 'PUT', fd);
+    if (r.ok) {
+      setEditing(null);
+      setEditCover(null);
+      setMsg('');
+      refresh();
+    } else {
+      setMsg(r.error || '保存失败');
+    }
+  }
+
+  async function toggle(id: number, enabled: boolean) {
+    const fd = new FormData();
+    fd.append('id', String(id));
+    fd.append('enabled', String(enabled));
+    await submit('/api/admin/shop', 'PUT', fd);
+    refresh();
+  }
+
+  async function del(id: number) {
+    if (!(await ask('确定删除这个商品？'))) return;
+    await api(`/api/admin/shop/${id}`, { method: 'DELETE' });
+    refresh();
+  }
+
+  return (
+    <div>
+      <Sec title="新增商品">
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              placeholder="商品标题"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              className="w-64 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+            />
+            <input
+              placeholder="链接（支持B站 / 淘宝 / 天猫等，http(s):// 开头）"
+              value={form.url}
+              onChange={(e) => setForm({ ...form, url: e.target.value })}
+              className="w-96 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+            />
+            <input
+              placeholder="小标签（装扮/周边/谷子…）"
+              value={form.tag}
+              onChange={(e) => setForm({ ...form, tag: e.target.value })}
+              className="w-44 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              placeholder="商品简介"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              className="w-96 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+            />
+            <input
+              placeholder="封面图 URL（可选）"
+              value={form.coverUrl}
+              onChange={(e) => setForm({ ...form, coverUrl: e.target.value })}
+              className="w-64 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+            />
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setCover(e.target.files?.[0] || null)}
+              className="text-white/70"
+              title="或直接上传封面图"
+            />
+            <button onClick={add} className="rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-500">
+              添加
+            </button>
+          </div>
+          {msg && <span className="text-xs text-red-300">{msg}</span>}
+        </div>
+      </Sec>
+      <Sec
+        title={`商品列表（${shown.length}${shown.length !== list.length ? ` / ${list.length}` : ''}）`}
+        right={<SearchBox value={qs} onChange={setQs} placeholder="搜索商品" />}
+      >
+        <div className="flex flex-col gap-2">
+          {shown.map((s) => (
+            <div key={s.id} className="rounded-lg border border-white/10 p-3">
+              {editing?.id === s.id ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      value={editing.title}
+                      onChange={(e) => setEditing({ ...editing, title: e.target.value })}
+                      placeholder="标题"
+                      className="w-56 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+                    />
+                    <input
+                      value={editing.url}
+                      onChange={(e) => setEditing({ ...editing, url: e.target.value })}
+                      placeholder="链接"
+                      className="w-96 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+                    />
+                    <input
+                      value={editing.tag || ''}
+                      onChange={(e) => setEditing({ ...editing, tag: e.target.value })}
+                      placeholder="标签"
+                      className="w-32 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      value={editing.description || ''}
+                      onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+                      placeholder="简介"
+                      className="w-96 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-white"
+                    />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setEditCover(e.target.files?.[0] || null)}
+                      className="text-white/70"
+                      title="更换封面"
+                    />
+                    <button onClick={saveEdit} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-500">
+                      保存
+                    </button>
+                    <button onClick={() => setEditing(null)} className="rounded-lg border border-white/20 px-3 py-1.5 text-xs text-white/70 hover:bg-white/10">
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-3">
+                  {s.cover && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={s.cover} alt="" className="h-12 w-20 rounded object-cover" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      {s.tag && (
+                        <span className="rounded-full bg-brand-500/20 px-2 py-0.5 text-[10px] text-brand-100">
+                          {s.tag}
+                        </span>
+                      )}
+                      <span className={`truncate text-sm ${s.enabled ? 'text-white/90' : 'text-white/35 line-through'}`}>
+                        {s.title}
+                      </span>
+                    </div>
+                    <a href={s.url} target="_blank" rel="noreferrer" className="truncate text-xs text-white/40 hover:text-brand-200">
+                      {s.url}
+                    </a>
+                  </div>
+                  <button
+                    onClick={() => toggle(s.id, !s.enabled)}
+                    className={`rounded-full px-3 py-1 text-xs ${
+                      s.enabled ? 'bg-emerald-900/60 text-emerald-200' : 'bg-white/10 text-white/50'
+                    }`}
+                  >
+                    {s.enabled ? '上架中' : '已下架'}
+                  </button>
+                  <button
+                    onClick={() => setEditing({ ...s })}
+                    className="text-xs text-sky-300 hover:underline"
+                  >
+                    编辑
+                  </button>
+                  <button onClick={() => del(s.id)} className="text-xs text-red-300 hover:underline">
+                    删除
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+          {list.length === 0 && <p className="text-white/40">还没有商品。</p>}
+        </div>
+      </Sec>
+    </div>
+  );
+}
+
+// ---------------- 豆漫墙（#大熊猫豆漫# 话题动态） ----------------
+function TopicTab() {
+  const [list, setList] = useState<any[]>([]);
+  const [msg, setMsg] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const [qs, setQs] = useState('');
+
+  const refresh = useCallback(async () => {
+    const r = await api('/api/admin/topic');
+    setList(r.list || []);
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  async function sync() {
+    setSyncing(true);
+    setMsg('同步中…');
+    const r = await api('/api/admin/topic', { method: 'POST', body: JSON.stringify({ limit: 18 }) });
+    setMsg(r.ok ? `已同步 ${r.count} 条（新/更新）` : r.error || '同步失败');
+    setSyncing(false);
+    refresh();
+  }
+  async function toggle(w: any) {
+    await api(`/api/admin/topic/${w.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled: !w.enabled }),
+    });
+    refresh();
+  }
+  async function del(w: any) {
+    if (!(await ask(`确定删除这条「${w.text?.slice(0, 12) || w.id}」？`))) return;
+    await api(`/api/admin/topic/${w.id}`, { method: 'DELETE' });
+    refresh();
+  }
+
+  const shown = quickFilter(list, qs);
+
+  return (
+    <div>
+      <Sec
+        title="同步话题动态"
+        desc="从 B站 #大熊猫豆漫# 拉取最新动态并写库（已有条目保留手动开关状态）"
+        right={
+          <button
+            onClick={sync}
+            disabled={syncing}
+            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-500 disabled:opacity-50"
+          >
+            {syncing ? '同步中…' : '同步最新动态'}
+          </button>
+        }
+      >
+        <p className="text-sm text-white/60">
+          共 {list.length} 条（含隐藏 {list.filter((w) => !w.enabled).length} 条）。首页「豆漫墙」只展示启用的条目。
+        </p>
+        {msg && <p className="mt-2 text-xs text-amber-300">{msg}</p>}
+      </Sec>
+      <Sec
+        title={`动态列表（${shown.length}${shown.length !== list.length ? ` / ${list.length}` : ''}）`}
+        right={<SearchBox value={qs} onChange={setQs} placeholder="搜索作者/文字" />}
+      >
+        <div className="flex flex-col gap-2">
+          {shown.map((w) => (
+            <div
+              key={w.id}
+              className={`flex items-center gap-3 rounded-lg border border-white/10 p-3 ${w.enabled ? '' : 'opacity-50'}`}
+            >
+              {w.image ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={w.image} alt="" className="h-14 w-14 flex-none rounded object-cover" />
+              ) : (
+                <div className="flex h-14 w-14 flex-none items-center justify-center rounded bg-white/5 text-lg">
+                  {w.kind === 'video' ? '🎬' : w.kind === 'article' ? '📄' : '💬'}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm text-white/90">
+                  {w.text || <span className="text-white/40">（无文字，仅图）</span>}
+                </div>
+                <div className="truncate text-xs text-white/40">
+                  {w.author} · {w.pub_time} · {w.kind}
+                </div>
+              </div>
+              <a
+                href={w.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-sky-300 hover:underline"
+              >
+                原帖
+              </a>
+              <button onClick={() => toggle(w)} className="text-xs text-amber-300 hover:underline">
+                {w.enabled ? '隐藏' : '显示'}
+              </button>
+              <button onClick={() => del(w)} className="text-xs text-red-300 hover:underline">
+                删除
+              </button>
+            </div>
+          ))}
+          {shown.length === 0 && <p className="text-white/40">暂无动态，点上方「同步最新动态」拉取。</p>}
+        </div>
+      </Sec>
+    </div>
+  );
+}
+
+// ---------------- 通知 ----------------
+function NewsTab() {
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+  const [list, setList] = useState<any[]>([]);
+  const [form, setForm] = useState({ date: today, tag: '', title: '', body: '' });
+  const [editing, setEditing] = useState<any | null>(null);
+  const [msg, setMsg] = useState('');
+  const [qs, setQs] = useState('');
+  const shown = quickFilter(list, qs);
+
+  const refresh = useCallback(async () => {
+    const r = await api('/api/admin/news');
+    setList(r.list || []);
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  async function add() {
+    const r = await api('/api/admin/news', { method: 'POST', body: JSON.stringify(form) });
+    if (r.ok) {
+      setForm({ date: today, tag: '', title: '', body: '' });
+      setMsg('');
+      refresh();
+    } else {
+      setMsg(r.error || '新增失败');
+    }
+  }
+  async function saveEdit() {
+    if (!editing) return;
+    const r = await api('/api/admin/news', { method: 'PUT', body: JSON.stringify(editing) });
+    if (r.ok) {
+      setEditing(null);
+      setMsg('');
+      refresh();
+    } else {
+      setMsg(r.error || '保存失败');
+    }
+  }
+  async function toggle(id: number, enabled: boolean) {
+    await api('/api/admin/news', { method: 'PUT', body: JSON.stringify({ id, enabled }) });
+    refresh();
+  }
+  async function del(id: number) {
+    if (!(await ask('确定删除这条通知？'))) return;
+    await api(`/api/admin/news/${id}`, { method: 'DELETE' });
+    refresh();
+  }
+
+  const fields = (obj: any, set: (v: any) => void) => (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="date"
+          value={obj.date}
+          onChange={(e) => set({ ...obj, date: e.target.value })}
+          className="w-40 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+        />
+        <input
+          placeholder="标签（功能/改版/数据…可留空）"
+          value={obj.tag || ''}
+          onChange={(e) => set({ ...obj, tag: e.target.value })}
+          className="w-56 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+        />
+        <input
+          placeholder="标题"
+          value={obj.title}
+          onChange={(e) => set({ ...obj, title: e.target.value })}
+          className="w-96 rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+        />
+      </div>
+      <textarea
+        placeholder="正文"
+        rows={2}
+        value={obj.body}
+        onChange={(e) => set({ ...obj, body: e.target.value })}
+        className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+      />
+    </div>
+  );
+
+  return (
+    <div>
+      <Sec title="新增通知">
+        {fields(form, setForm)}
+        <div className="mt-2 flex items-center gap-3">
+          <button onClick={add} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500">
+            发布
+          </button>
+          {msg && <span className="text-xs text-red-300">{msg}</span>}
+        </div>
+      </Sec>
+      <Sec
+        title={`通知列表（${shown.length}${shown.length !== list.length ? ` / ${list.length}` : ''}）`}
+        right={<SearchBox value={qs} onChange={setQs} placeholder="搜索通知" />}
+      >
+        <div className="flex flex-col gap-2">
+          {shown.map((n) => (
+            <div key={n.id} className="rounded-lg border border-white/10 p-3">
+              {editing?.id === n.id ? (
+                <div className="flex flex-col gap-2">
+                  {fields(editing, setEditing)}
+                  <div className="flex gap-2">
+                    <button onClick={saveEdit} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-500">
+                      保存
+                    </button>
+                    <button onClick={() => setEditing(null)} className="rounded-lg border border-white/20 px-3 py-1.5 text-xs text-white/70 hover:bg-white/10">
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="w-24 shrink-0 text-xs text-white/40">{n.date}</span>
+                  {n.tag && (
+                    <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/70">
+                      {n.tag}
+                    </span>
+                  )}
+                  <span className={`min-w-0 flex-1 truncate text-sm ${n.enabled ? 'text-white/90' : 'text-white/35 line-through'}`}>
+                    {n.title}
+                  </span>
+                  <button
+                    onClick={() => toggle(n.id, !n.enabled)}
+                    className={`rounded-full px-3 py-1 text-xs ${
+                      n.enabled ? 'bg-emerald-900/60 text-emerald-200' : 'bg-white/10 text-white/50'
+                    }`}
+                  >
+                    {n.enabled ? '显示中' : '已隐藏'}
+                  </button>
+                  <button onClick={() => setEditing({ ...n })} className="text-xs text-sky-300 hover:underline">
+                    编辑
+                  </button>
+                  <button onClick={() => del(n.id)} className="text-xs text-red-300 hover:underline">
+                    删除
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+          {list.length === 0 && <p className="text-white/40">还没有通知。</p>}
+        </div>
+      </Sec>
     </div>
   );
 }

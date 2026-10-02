@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import type { DynItem, LiveSession, LiveCategory } from './bilibili';
 import { AVATAR_URL } from './constants';
+import { resolveCategory, classifyLiveTitle } from './liveCategory';
 
 // ---------- 本地 .env 加载（tsx 脚本不会自动加载，Next 已加载时此函数自动跳过） ----------
 (function loadEnv() {
@@ -121,6 +122,13 @@ export function ensureReady(): Promise<void> {
       );
       await p.query(
         `CREATE INDEX IF NOT EXISTS idx_live_danmaku_sender ON live_danmaku(sender)`,
+      );
+      // 发送者身份回填（scripts/match-replay-senders.ts）：哈希 ↔ uid/昵称
+      await p.query(
+        `ALTER TABLE live_danmaku ADD COLUMN IF NOT EXISTS sender_uid BIGINT`,
+      );
+      await p.query(
+        `ALTER TABLE live_danmaku ADD COLUMN IF NOT EXISTS sender_name TEXT`,
       );
 
       // ---------- 直播实时监控（常驻守护进程采集） ----------
@@ -329,6 +337,12 @@ export function ensureReady(): Promise<void> {
          SELECT 'trackStats', '李豆沙数据追踪(粉丝/大航海)', '0 * * * *', true, EXTRACT(EPOCH FROM now())::bigint, EXTRACT(EPOCH FROM now())::bigint
          WHERE NOT EXISTS (SELECT 1 FROM job WHERE type='trackStats')`,
       );
+      // 默认种子：直播回放自动同步（拉新回放 → 补近期弹幕 → 身份回填），每 2 小时
+      await p.query(
+        `INSERT INTO job (type, name, cron, enabled, payload, created_at, updated_at)
+         SELECT 'replaySync', '直播回放自动同步(新回放+弹幕+身份回填)', '0 */2 * * *', true, '{"days":30}', EXTRACT(EPOCH FROM now())::bigint, EXTRACT(EPOCH FROM now())::bigint
+         WHERE NOT EXISTS (SELECT 1 FROM job WHERE type='replaySync')`,
+      );
       // 任务运行记录（状态 / 日志 / 报错 / 重试）
       await p.query(`
         CREATE TABLE IF NOT EXISTS job_run (
@@ -358,6 +372,10 @@ export function ensureReady(): Promise<void> {
       // live_session 人工标记列
       await p.query(
         `ALTER TABLE live_session ADD COLUMN IF NOT EXISTS category_manual TEXT`,
+      );
+      // 回放封面（/replays/{bvid}.jpg 本地路径；'' = 已尝试但无封面）
+      await p.query(
+        `ALTER TABLE live_session ADD COLUMN IF NOT EXISTS cover TEXT`,
       );
       await p.query(
         `ALTER TABLE live_session ADD COLUMN IF NOT EXISTS sing_duration INTEGER`,
@@ -410,6 +428,85 @@ export function ensureReady(): Promise<void> {
         actor TEXT,
         created_at BIGINT
       )`);
+      // 首页语录：hero 区一句话人设，后台增删改查，前台随机展示
+      await p.query(`CREATE TABLE IF NOT EXISTS quote (
+        id SERIAL PRIMARY KEY,
+        text TEXT NOT NULL,
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        created_at BIGINT
+      )`);
+      // 豆沙作品：李豆沙自己做的作品（互动视频等），后台增删改查
+      await p.query(`CREATE TABLE IF NOT EXISTS work (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        url TEXT NOT NULL,
+        cover TEXT,
+        description TEXT,
+        pubdate BIGINT,
+        sort_order INTEGER DEFAULT 0,
+        created_at BIGINT
+      )`);
+      // 小人台词：左下角豆沙小人点击/闲置时的随机发言，支持生效条件
+      await p.query(`CREATE TABLE IF NOT EXISTS mascot_line (
+        id SERIAL PRIMARY KEY,
+        text TEXT NOT NULL,
+        weight INTEGER DEFAULT 1,
+        time_start TEXT,
+        time_end TEXT,
+        dates TEXT,
+        only_live BOOLEAN DEFAULT false,
+        enabled BOOLEAN DEFAULT true,
+        created_at BIGINT
+      )`);
+      // 素材库：图片（立绘/装扮/表情包）与非图片素材（鼠标指针/输入法皮肤等）
+      await p.query(`CREATE TABLE IF NOT EXISTS asset (
+        id SERIAL PRIMARY KEY,
+        title TEXT,
+        category TEXT NOT NULL,
+        file TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'image',
+        sort_order INTEGER DEFAULT 0,
+        created_at BIGINT
+      )`);
+      // 商店：周边/装扮商品，链接支持B站/淘宝等任意平台
+      await p.query(`CREATE TABLE IF NOT EXISTS shop_item (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        url TEXT NOT NULL,
+        cover TEXT,
+        description TEXT,
+        tag TEXT,
+        sort_order INTEGER DEFAULT 0,
+        enabled BOOLEAN DEFAULT true,
+        created_at BIGINT
+      )`);
+      // 通知：网站升级公告
+      await p.query(`CREATE TABLE IF NOT EXISTS news_post (
+        id SERIAL PRIMARY KEY,
+        date TEXT NOT NULL,
+        tag TEXT,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        enabled BOOLEAN DEFAULT true,
+        created_at BIGINT
+      )`);
+      // 豆漫墙（#大熊猫豆漫# 话题动态）：入库后可后台管理（开关 / 删除 / 编辑）
+      await p.query(`CREATE TABLE IF NOT EXISTS topic_post (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL DEFAULT 'text',
+        author TEXT,
+        pub_time TEXT,
+        text TEXT,
+        image TEXT,
+        url TEXT,
+        enabled BOOLEAN DEFAULT true,
+        sort_order INTEGER DEFAULT 0,
+        created_at BIGINT
+      )`);
+      await p.query(
+        `CREATE INDEX IF NOT EXISTS idx_topic_post_enabled ON topic_post(enabled)`,
+      );
     })().catch((e) => {
       _schema = null;
       throw e;
@@ -704,6 +801,719 @@ export async function getBlockedBvids(): Promise<string[]> {
   return rows.map((r) => r.bvid);
 }
 
+// ---------- 首页语录（hero 一句话人设，后台可管理） ----------
+export interface QuoteRow {
+  id: number;
+  text: string;
+  enabled: boolean;
+  created_at: number;
+}
+
+export async function queryQuotes(): Promise<QuoteRow[]> {
+  await ensureReady();
+  const { rows } = await getPool().query<QuoteRow>(
+    'SELECT id, text, enabled, created_at FROM quote ORDER BY id DESC',
+  );
+  return rows;
+}
+
+// 随机取一条启用中的语录；库空返回 null（前台回退默认句）
+export async function getRandomQuote(): Promise<string | null> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ text: string }>(
+    'SELECT text FROM quote WHERE enabled = true ORDER BY random() LIMIT 1',
+  );
+  return rows[0]?.text ?? null;
+}
+
+export async function insertQuote(text: string): Promise<number> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ id: number }>(
+    'INSERT INTO quote (text, enabled, created_at) VALUES ($1, true, $2) RETURNING id',
+    [text, Date.now()],
+  );
+  return rows[0].id;
+}
+
+export async function updateQuote(
+  id: number,
+  patch: { text?: string; enabled?: boolean },
+): Promise<void> {
+  await ensureReady();
+  const sets: string[] = [];
+  const vals: any[] = [];
+  if (patch.text != null) {
+    vals.push(patch.text);
+    sets.push(`text = $${vals.length}`);
+  }
+  if (patch.enabled != null) {
+    vals.push(patch.enabled);
+    sets.push(`enabled = $${vals.length}`);
+  }
+  if (!sets.length) return;
+  vals.push(id);
+  await getPool().query(
+    `UPDATE quote SET ${sets.join(', ')} WHERE id = $${vals.length}`,
+    vals,
+  );
+}
+
+export async function deleteQuote(id: number): Promise<void> {
+  await ensureReady();
+  await getPool().query('DELETE FROM quote WHERE id = $1', [id]);
+}
+
+// ---------- 豆沙作品（后台可管理） ----------
+export interface WorkRow {
+  id: number;
+  title: string;
+  url: string;
+  cover: string | null;
+  description: string | null;
+  pubdate: number;
+  sort_order: number;
+}
+
+export async function queryWorks(): Promise<WorkRow[]> {
+  await ensureReady();
+  const { rows } = await getPool().query<WorkRow>(
+    'SELECT id, title, url, cover, description, pubdate, sort_order FROM work ORDER BY sort_order ASC, COALESCE(pubdate, created_at) DESC',
+  );
+  return rows;
+}
+
+export async function insertWork(w: {
+  title: string;
+  url: string;
+  cover?: string | null;
+  description?: string | null;
+  pubdate?: number | null;
+  sort_order?: number;
+}): Promise<number> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ id: number }>(
+    `INSERT INTO work (title, url, cover, description, pubdate, sort_order, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+    [w.title, w.url, w.cover ?? null, w.description ?? null, w.pubdate ?? null, w.sort_order ?? 0, Date.now()],
+  );
+  return rows[0].id;
+}
+
+export async function updateWork(
+  id: number,
+  patch: {
+    title?: string;
+    url?: string;
+    cover?: string | null;
+    description?: string | null;
+    pubdate?: number | null;
+    sort_order?: number;
+  },
+): Promise<void> {
+  await ensureReady();
+  const sets: string[] = [];
+  const vals: any[] = [];
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    vals.push(v);
+    sets.push(`${k} = $${vals.length}`);
+  }
+  if (!sets.length) return;
+  vals.push(id);
+  await getPool().query(
+    `UPDATE work SET ${sets.join(', ')} WHERE id = $${vals.length}`,
+    vals,
+  );
+}
+
+export async function deleteWork(id: number): Promise<void> {
+  await ensureReady();
+  await getPool().query('DELETE FROM work WHERE id = $1', [id]);
+}
+
+// ---------- 小人台词（左下角豆沙小人的随机发言） ----------
+export interface MascotLineRow {
+  id: number;
+  text: string;
+  /** 权重，越大越常出现 */
+  weight: number;
+  /** 生效开始 HH:MM（空=不限，支持跨零点区间） */
+  time_start: string | null;
+  /** 生效结束 HH:MM */
+  time_end: string | null;
+  /** 特定日期，逗号分隔 MM-DD（空=不限） */
+  dates: string | null;
+  /** 仅直播中生效 */
+  only_live: boolean;
+  enabled: boolean;
+}
+
+export async function queryMascotLines(): Promise<MascotLineRow[]> {
+  await ensureReady();
+  const { rows } = await getPool().query<MascotLineRow>(
+    'SELECT id, text, weight, time_start, time_end, dates, only_live, enabled FROM mascot_line ORDER BY id DESC',
+  );
+  return rows;
+}
+
+export async function insertMascotLine(w: {
+  text: string;
+  weight?: number;
+  time_start?: string | null;
+  time_end?: string | null;
+  dates?: string | null;
+  only_live?: boolean;
+}): Promise<number> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ id: number }>(
+    `INSERT INTO mascot_line (text, weight, time_start, time_end, dates, only_live, enabled, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,true,$7) RETURNING id`,
+    [w.text, w.weight ?? 1, w.time_start ?? null, w.time_end ?? null, w.dates ?? null, w.only_live ?? false, Date.now()],
+  );
+  return rows[0].id;
+}
+
+export async function updateMascotLine(
+  id: number,
+  patch: {
+    text?: string;
+    weight?: number;
+    time_start?: string | null;
+    time_end?: string | null;
+    dates?: string | null;
+    only_live?: boolean;
+    enabled?: boolean;
+  },
+): Promise<void> {
+  await ensureReady();
+  const sets: string[] = [];
+  const vals: any[] = [];
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    vals.push(v);
+    sets.push(`${k} = $${vals.length}`);
+  }
+  if (!sets.length) return;
+  vals.push(id);
+  await getPool().query(
+    `UPDATE mascot_line SET ${sets.join(', ')} WHERE id = $${vals.length}`,
+    vals,
+  );
+}
+
+export async function deleteMascotLine(id: number): Promise<void> {
+  await ensureReady();
+  await getPool().query('DELETE FROM mascot_line WHERE id = $1', [id]);
+}
+
+// ---------- 素材库 ----------
+// 分类 key：standee_cut 立绘抠图 / standee_raw 立绘原图 / garb 装扮素材 /
+//          emoji 表情包 / cursor 鼠标指针 / ime 输入法皮肤 / other 其他
+export interface AssetRow {
+  id: number;
+  title: string | null;
+  category: string;
+  file: string;
+  kind: string; // image | file
+  sort_order: number;
+}
+
+export async function queryAssets(category?: string): Promise<AssetRow[]> {
+  await ensureReady();
+  const { rows } = category
+    ? await getPool().query<AssetRow>(
+        'SELECT id, title, category, file, kind, sort_order FROM asset WHERE category=$1 ORDER BY sort_order ASC, id ASC',
+        [category],
+      )
+    : await getPool().query<AssetRow>(
+        'SELECT id, title, category, file, kind, sort_order FROM asset ORDER BY category ASC, sort_order ASC, id ASC',
+      );
+  return rows;
+}
+
+export async function countAssets(category?: string): Promise<number> {
+  await ensureReady();
+  const { rows } = category
+    ? await getPool().query<{ c: string }>('SELECT COUNT(*)::text c FROM asset WHERE category=$1', [category])
+    : await getPool().query<{ c: string }>('SELECT COUNT(*)::text c FROM asset');
+  return Number(rows[0]?.c ?? 0);
+}
+
+// ---------- 素材库分类（内置 7 类 + 后台自定义，存于 admin_kv） ----------
+export interface AssetCategory {
+  key: string;
+  label: string;
+  desc?: string;
+}
+
+export const BUILTIN_ASSET_CATEGORIES: AssetCategory[] = [
+  { key: 'standee_cut', label: '立绘（抠图）' },
+  { key: 'standee_raw', label: '立绘（原图）' },
+  { key: 'garb', label: '装扮素材' },
+  { key: 'emoji', label: '装扮表情包' },
+  {
+    key: 'cursor',
+    label: '鼠标指针',
+    desc: '安装方法：下载后右键 .cur/.ani 文件 → 安装，或在系统鼠标设置中浏览该指针。',
+  },
+  {
+    key: 'ime',
+    label: '输入法皮肤',
+    desc: '下载后导入对应输入法（如搜狗 / 微软拼音）的皮肤设置。',
+  },
+  { key: 'other', label: '其他' },
+];
+
+// 自定义分类的 key 前缀（用于区分内置/自定义，内置不可删）
+export const CUSTOM_CAT_PREFIX = 'c_';
+
+export async function getAssetCategories(): Promise<AssetCategory[]> {
+  const customs: AssetCategory[] = [];
+  try {
+    const raw = await getKv('asset_categories');
+    const j = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(j)) {
+      for (const c of j) {
+        const key = typeof c?.key === 'string' ? c.key.trim() : '';
+        const label = typeof c?.label === 'string' ? c.label.trim() : '';
+        if (key && label) customs.push({ key, label });
+      }
+    }
+  } catch {
+    /* 忽略脏数据，仅用内置 */
+  }
+  const builtinKeys = new Set(BUILTIN_ASSET_CATEGORIES.map((c) => c.key));
+  return [...BUILTIN_ASSET_CATEGORIES, ...customs.filter((c) => !builtinKeys.has(c.key))];
+}
+
+export async function setAssetCategories(list: AssetCategory[]): Promise<void> {
+  await setKv(
+    'asset_categories',
+    JSON.stringify(list.filter((c) => c.key && c.label).map(({ key, label }) => ({ key, label }))),
+  );
+}
+
+// ---------- 豆漫墙（#大熊猫豆漫# 话题动态，入库管理） ----------
+export interface TopicPostRow {
+  id: string;
+  kind: string;
+  author: string | null;
+  pub_time: string | null;
+  text: string | null;
+  image: string | null;
+  url: string | null;
+  enabled: boolean;
+  sort_order: number;
+  created_at: number;
+}
+
+// 读取（默认只取启用的，按 sort_order / 创建时间倒序）
+export async function queryTopicPosts(onlyEnabled = true): Promise<TopicPostRow[]> {
+  await ensureReady();
+  const { rows } = await getPool().query<TopicPostRow>(
+    `SELECT id, kind, author, pub_time, text, image, url, enabled, sort_order, created_at
+     FROM topic_post
+     ${onlyEnabled ? 'WHERE enabled = true' : ''}
+     ORDER BY sort_order ASC, created_at DESC`,
+  );
+  return rows;
+}
+
+// 写入单条（入库 / 同步用）。on conflict 保留手动开关状态，只更新内容字段。
+export async function upsertTopicPost(p: {
+  id: string;
+  kind?: string;
+  author?: string | null;
+  pub_time?: string | null;
+  text?: string | null;
+  image?: string | null;
+  url?: string | null;
+}): Promise<void> {
+  await ensureReady();
+  await getPool().query(
+    `INSERT INTO topic_post (id, kind, author, pub_time, text, image, url, enabled, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,true,$8)
+     ON CONFLICT (id) DO UPDATE SET
+       kind = EXCLUDED.kind,
+       author = EXCLUDED.author,
+       pub_time = EXCLUDED.pub_time,
+       text = EXCLUDED.text,
+       image = EXCLUDED.image,
+       url = EXCLUDED.url`,
+    [
+      p.id,
+      p.kind ?? 'text',
+      p.author ?? null,
+      p.pub_time ?? null,
+      p.text ?? null,
+      p.image ?? null,
+      p.url ?? null,
+      Date.now(),
+    ],
+  );
+}
+
+// 开关某条（后台手动隐藏/恢复）
+export async function setTopicPostEnabled(id: string, enabled: boolean): Promise<void> {
+  await ensureReady();
+  await getPool().query('UPDATE topic_post SET enabled = $2 WHERE id = $1', [id, enabled]);
+}
+
+export async function deleteTopicPost(id: string): Promise<void> {
+  await ensureReady();
+  await getPool().query('DELETE FROM topic_post WHERE id = $1', [id]);
+}
+
+// 是否已同步过（用于决定首页是否需回退实时拉取）
+export async function countTopicPosts(): Promise<number> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ c: string }>('SELECT COUNT(*)::text c FROM topic_post');
+  return Number(rows[0]?.c ?? 0);
+}
+
+export async function insertAsset(a: {
+  title?: string | null;
+  category: string;
+  file: string;
+  kind?: string;
+  sort_order?: number;
+}): Promise<number> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ id: number }>(
+    `INSERT INTO asset (title, category, file, kind, sort_order, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [a.title ?? null, a.category, a.file, a.kind ?? 'image', a.sort_order ?? 0, Date.now()],
+  );
+  return rows[0].id;
+}
+
+export async function updateAsset(
+  id: number,
+  patch: { title?: string | null; category?: string; sort_order?: number },
+): Promise<void> {
+  await ensureReady();
+  const sets: string[] = [];
+  const vals: any[] = [];
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    vals.push(v);
+    sets.push(`${k} = $${vals.length}`);
+  }
+  if (!sets.length) return;
+  vals.push(id);
+  await getPool().query(`UPDATE asset SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
+}
+
+// 返回被删素材的本地文件相对路径（ public/ 下），供调用方删除磁盘文件；外链返回 null
+export async function deleteAsset(id: number): Promise<string | null> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ file: string }>('SELECT file FROM asset WHERE id=$1', [id]);
+  const file = rows[0]?.file;
+  await getPool().query('DELETE FROM asset WHERE id=$1', [id]);
+  if (!file || /^https?:\/\//.test(file)) return null;
+  if (!file.startsWith('/uploads/assets/')) return null; // 播种的历史素材不删磁盘原文件
+  return file;
+}
+
+// 首次访问时把 public/ 下已有的图片素材播种进库（跳过二维码 dousha-10.png），只播种一次
+const SEED_SKIP = new Set(['/characters/dousha-10.png']);
+
+export async function seedAssetsOnce(): Promise<void> {  await ensureReady();
+  if ((await countAssets()) > 0) return;
+  const pub = path.join(process.cwd(), 'public');
+  const groups: { category: string; base: string; dir: string }[] = [
+    { category: 'standee_cut', base: '/characters/cut', dir: path.join(pub, 'characters', 'cut') },
+    { category: 'standee_raw', base: '/characters', dir: path.join(pub, 'characters') },
+    { category: 'garb', base: '/garb', dir: path.join(pub, 'garb') },
+    { category: 'emoji', base: '/garb/emojis', dir: path.join(pub, 'garb', 'emojis') },
+  ];
+  for (const g of groups) {
+    let files: string[] = [];
+    try {
+      files = fs
+        .readdirSync(g.dir)
+        .filter((f) => /\.(png|jpe?g|webp|gif)$/i.test(f))
+        .sort();
+    } catch {
+      continue;
+    }
+    for (const f of files) {
+      const webPath = `${g.base}/${f}`;
+      if (SEED_SKIP.has(webPath)) continue;
+      await insertAsset({ title: f.replace(/\.[^.]+$/, ''), category: g.category, file: webPath, kind: 'image' });
+    }
+  }
+}
+
+// ---------- 商店（周边/装扮，链接支持B站/淘宝等任意平台） ----------
+export interface ShopItemRow {
+  id: number;
+  title: string;
+  url: string;
+  cover: string | null;
+  description: string | null;
+  tag: string | null;
+  sort_order: number;
+  enabled: boolean;
+}
+
+export async function queryShopItems(onlyEnabled = false): Promise<ShopItemRow[]> {
+  await ensureReady();
+  const { rows } = onlyEnabled
+    ? await getPool().query<ShopItemRow>(
+        'SELECT id, title, url, cover, description, tag, sort_order, enabled FROM shop_item WHERE enabled=true ORDER BY sort_order ASC, id ASC',
+      )
+    : await getPool().query<ShopItemRow>(
+        'SELECT id, title, url, cover, description, tag, sort_order, enabled FROM shop_item ORDER BY sort_order ASC, id ASC',
+      );
+  return rows;
+}
+
+export async function countShopItems(): Promise<number> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ c: string }>('SELECT COUNT(*)::text c FROM shop_item');
+  return Number(rows[0]?.c ?? 0);
+}
+
+export async function insertShopItem(s: {
+  title: string;
+  url: string;
+  cover?: string | null;
+  description?: string | null;
+  tag?: string | null;
+  sort_order?: number;
+}): Promise<number> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ id: number }>(
+    `INSERT INTO shop_item (title, url, cover, description, tag, sort_order, enabled, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,true,$7) RETURNING id`,
+    [s.title, s.url, s.cover ?? null, s.description ?? null, s.tag ?? null, s.sort_order ?? 0, Date.now()],
+  );
+  return rows[0].id;
+}
+
+export async function updateShopItem(
+  id: number,
+  patch: {
+    title?: string;
+    url?: string;
+    cover?: string | null;
+    description?: string | null;
+    tag?: string | null;
+    sort_order?: number;
+    enabled?: boolean;
+  },
+): Promise<void> {
+  await ensureReady();
+  const sets: string[] = [];
+  const vals: any[] = [];
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    vals.push(v);
+    sets.push(`${k} = $${vals.length}`);
+  }
+  if (!sets.length) return;
+  vals.push(id);
+  await getPool().query(`UPDATE shop_item SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
+}
+
+// 返回被删商品的封面路径（仅 /uploads/shop/ 本地文件），供调用方删磁盘
+export async function deleteShopItem(id: number): Promise<string | null> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ cover: string | null }>('SELECT cover FROM shop_item WHERE id=$1', [id]);
+  const cover = rows[0]?.cover ?? null;
+  await getPool().query('DELETE FROM shop_item WHERE id=$1', [id]);
+  return cover && cover.startsWith('/uploads/shop/') ? cover : null;
+}
+
+// 商店表为空时播种现有装扮商品
+export async function seedShopOnce(): Promise<void> {
+  await ensureReady();
+  if ((await countShopItems()) > 0) return;
+  await insertShopItem({
+    title: '装扮 · 李豆沙与电子星海',
+    url: 'https://www.bilibili.com/h5/mall/equity-link/collect-home?item_id=413365001&isdiy=0&part=suit&f_source=garb',
+    cover: '/garb/cover.jpg',
+    description: '官方装扮已上线 · 含粉丝卡片 / 表情包 / 空间背景',
+    tag: '装扮',
+  });
+}
+
+// ---------- 通知（网站升级公告） ----------
+export interface NewsRow {
+  id: number;
+  date: string;
+  tag: string | null;
+  title: string;
+  body: string;
+  sort_order: number;
+  enabled: boolean;
+}
+
+export async function queryNews(onlyEnabled = false): Promise<NewsRow[]> {
+  await ensureReady();
+  const { rows } = onlyEnabled
+    ? await getPool().query<NewsRow>(
+        'SELECT id, date, tag, title, body, sort_order, enabled FROM news_post WHERE enabled=true ORDER BY date DESC, sort_order ASC, id DESC',
+      )
+    : await getPool().query<NewsRow>(
+        'SELECT id, date, tag, title, body, sort_order, enabled FROM news_post ORDER BY date DESC, sort_order ASC, id DESC',
+      );
+  return rows;
+}
+
+export async function countNews(): Promise<number> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ c: string }>('SELECT COUNT(*)::text c FROM news_post');
+  return Number(rows[0]?.c ?? 0);
+}
+
+export async function insertNews(n: {
+  date: string;
+  tag?: string | null;
+  title: string;
+  body: string;
+}): Promise<number> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ id: number }>(
+    `INSERT INTO news_post (date, tag, title, body, enabled, created_at)
+     VALUES ($1,$2,$3,$4,true,$5) RETURNING id`,
+    [n.date, n.tag ?? null, n.title, n.body, Date.now()],
+  );
+  return rows[0].id;
+}
+
+export async function updateNews(
+  id: number,
+  patch: {
+    date?: string;
+    tag?: string | null;
+    title?: string;
+    body?: string;
+    enabled?: boolean;
+  },
+): Promise<void> {
+  await ensureReady();
+  const sets: string[] = [];
+  const vals: any[] = [];
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    vals.push(v);
+    sets.push(`${k} = $${vals.length}`);
+  }
+  if (!sets.length) return;
+  vals.push(id);
+  await getPool().query(`UPDATE news_post SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
+}
+
+export async function deleteNews(id: number): Promise<void> {
+  await ensureReady();
+  await getPool().query('DELETE FROM news_post WHERE id=$1', [id]);
+}
+
+// 通知表为空时播种现有公告
+export async function seedNewsOnce(): Promise<void> {
+  await ensureReady();
+  if ((await countNews()) > 0) return;
+  await insertNews({
+    date: '2026-09-26',
+    tag: '功能',
+    title: '首页右下角新增快捷入口',
+    body: '新增「商店 / 素材 / 通知」三个快捷按钮：商店汇集官方装扮与周边，素材库收录立绘与装扮图片，本页用于发布网站升级公告。',
+  });
+  await insertNews({
+    date: '2026-09-26',
+    tag: '改版',
+    title: '首页切片熊猫墙上线',
+    body: '原「全站投稿统计」与切片墙合并：切片缩略图拼成熊猫造型，切片man 统计移至侧栏，支持点击与随机抽选高亮。同时移除年度明细与直播时长统计两个分屏。',
+  });
+  await insertNews({
+    date: '2026-09-26',
+    tag: '数据',
+    title: '歌单模块改为外站直达',
+    body: '歌单入口现在直接跳转至 lidousha.top 歌单站；首页新增实时粉丝数展示。',
+  });
+}
+
+// ---------- 熊猫活动轨迹：回放列表 + 每日直播时长 ----------
+export interface LiveReplayLite {
+  id: string; // 即回放 BV 号
+  title: string;
+  /** 最终分类（人工标记优先，否则按标题自动归类） */
+  category: string;
+  /** 按标题自动归类结果 */
+  autoCategory: string;
+  /** 人工标记（无则为 null） */
+  categoryManual: string | null;
+  /** 封面本地路径；'' = 已尝试但无封面；null = 尚未尝试 */
+  cover: string | null;
+  startTime: number;
+  durationSec: number;
+  danmaku: number;
+}
+
+export async function queryLiveReplays(): Promise<LiveReplayLite[]> {
+  await ensureReady();
+  const { rows } = await getPool().query<{
+    id: string;
+    title: string | null;
+    category_manual: string | null;
+    cover: string | null;
+    start_time: string;
+    duration_sec: number;
+    danmaku: number | null;
+  }>(
+    `SELECT id, title, category_manual, cover, start_time, duration_sec, danmaku
+     FROM live_session ORDER BY start_time DESC`,
+  );
+  return rows.map((r) => {
+    const categoryManual = r.category_manual ?? null;
+    const title = r.title ?? '';
+    return {
+      id: r.id,
+      title,
+      category: resolveCategory({ title, category_manual: categoryManual }),
+      autoCategory: classifyLiveTitle(title),
+      categoryManual,
+      cover: r.cover,
+      startTime: Number(r.start_time),
+      durationSec: Number(r.duration_sec) || 0,
+      danmaku: Number(r.danmaku ?? 0),
+    };
+  });
+}
+
+export interface LiveDayRow {
+  date: string; // YYYY-MM-DD（东八区）
+  sec: number;
+  count: number;
+  maxSec: number;
+}
+
+// 每天直播总时长（东八区按 start_time 归日），用于热力图
+export async function queryLiveDaily(): Promise<LiveDayRow[]> {
+  await ensureReady();
+  const { rows } = await getPool().query<{
+    d: string;
+    sec: string;
+    count: string;
+    max: string;
+  }>(
+    `SELECT to_char(to_timestamp(start_time) AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD') d,
+            SUM(duration_sec)::bigint AS sec,
+            COUNT(*)::int AS count,
+            MAX(duration_sec)::bigint AS max
+     FROM live_session
+     GROUP BY d ORDER BY d ASC`,
+  );
+  return rows.map((r) => ({
+    date: r.d,
+    sec: Number(r.sec),
+    count: Number(r.count),
+    maxSec: Number(r.max),
+  }));
+}
+
 // ---------- UP 黑名单（拉黑 UP 主） ----------
 // 拉黑一个 UP：记录到 blocked_up，并删除其全部已有切片（拉黑切片）。
 // 由于 author 在 video_stat 中精确匹配，删除即视为“拉黑切片”；
@@ -964,7 +1774,11 @@ export async function queryLiveStats(): Promise<LiveStatsData> {
   const byYear: Record<string, { sec: number; count: number }> = {};
   const replays: LiveStatsData['replays'] = [];
   for (const r of rows) {
-    const cat = ((r.category_manual as LiveCategory) || (r.category as LiveCategory) || 'other');
+    // 分类体系已扩展为七类，此处仅做三大类粗统计，陌生值一律归入 other，避免越界报错
+    const rawCat =
+      (r.category_manual as LiveCategory) || (r.category as LiveCategory) || 'other';
+    const cat: LiveCategory =
+      rawCat === 'sing' || rawCat === 'game' ? rawCat : 'other';
     const dur = Number(r.duration_sec) || 0;
     const dm = Number(r.danmaku ?? 0);
     totalSec += dur;
@@ -1316,6 +2130,9 @@ export interface DanmakuRow {
   dmid: string;
   bvid: string;
   sender: string;
+  // 实时监控回填的身份（match-replay-senders.ts），可能为 null（未匹配到）
+  sender_uid: number | null;
+  sender_name: string | null;
   text: string;
   vtime: number;
   sendtime: number;
@@ -1369,16 +2186,27 @@ export async function bulkInsertDanmaku(
 
 // 弹幕发送人排行（按发送条数），支持按单场回放过滤
 export async function queryDanmakuSenders(bvid?: string): Promise<
-  { sender: string; count: number }[]
+  { sender: string; senderName: string | null; senderUid: number | null; count: number }[]
 > {
   await ensureReady();
-  const { rows } = await getPool().query<{ sender: string; count: string }>(
-    `SELECT sender, COUNT(*)::int AS count FROM live_danmaku
+  const { rows } = await getPool().query<{
+    sender: string;
+    sender_name: string | null;
+    sender_uid: string | null;
+    count: string;
+  }>(
+    `SELECT sender, MAX(sender_name) AS sender_name, MAX(sender_uid) AS sender_uid, COUNT(*)::int AS count
+     FROM live_danmaku
      ${bvid ? 'WHERE bvid=$1' : ''}
      GROUP BY sender ORDER BY count DESC LIMIT 50`,
     bvid ? [bvid] : [],
   );
-  return rows.map((r) => ({ sender: r.sender, count: Number(r.count) }));
+  return rows.map((r) => ({
+    sender: r.sender,
+    senderName: r.sender_name,
+    senderUid: r.sender_uid != null ? Number(r.sender_uid) : null,
+    count: Number(r.count),
+  }));
 }
 
 // 高频弹幕文本排行（按出现次数），支持按单场回放过滤
@@ -1442,12 +2270,18 @@ export async function queryDanmakuLines(
     params,
   );
   const { rows } = await getPool().query<DanmakuRow>(
-    `SELECT dmid, bvid, sender, text, vtime, sendtime
+    `SELECT dmid, bvid, sender, sender_uid, sender_name, text, vtime, sendtime
      FROM live_danmaku WHERE ${where}
      ORDER BY vtime ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
     [...params, limit, offset],
   );
-  return { total: t[0]?.c ?? 0, rows };
+  return {
+    total: t[0]?.c ?? 0,
+    rows: rows.map((r) => ({
+      ...r,
+      sender_uid: r.sender_uid != null ? Number(r.sender_uid) : null,
+    })),
+  };
 }
 
 export async function getDanmakuSenderCount(): Promise<number> {
@@ -2246,9 +3080,93 @@ export async function insertCharacter(c: {
   return rows[0].id;
 }
 
+export async function updateCharacter(
+  id: number,
+  patch: { name?: string | null; caption?: string | null; sort_order?: number },
+): Promise<void> {
+  await ensureReady();
+  const sets: string[] = [];
+  const vals: any[] = [];
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    vals.push(v);
+    sets.push(`${k} = $${vals.length}`);
+  }
+  if (!sets.length) return;
+  vals.push(id);
+  await getPool().query(`UPDATE character SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
+}
+
 export async function deleteCharacter(id: number): Promise<void> {
   await ensureReady();
   await getPool().query('DELETE FROM character WHERE id=$1', [id]);
+}
+
+// 首次访问时把 public/characters/ 下的历史立绘播种进 character 表，
+// 让「熊猫衣柜」的内容进入后台可管理（跳过二维码图 dousha-10.png 与子目录）。
+export async function seedCharactersOnce(): Promise<void> {
+  await ensureReady();
+  const { rows } = await getPool().query<{ c: string }>('SELECT COUNT(*)::text c FROM character');
+  if (Number(rows[0]?.c ?? 0) > 0) return;
+  const dir = path.join(process.cwd(), 'public', 'characters');
+  let files: string[] = [];
+  try {
+    files = fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && /\.(png|jpe?g|webp|gif)$/i.test(e.name))
+      .map((e) => e.name)
+      .filter((f) => !SEED_SKIP.has(`/characters/${f}`))
+      .sort((a, b) => {
+        // dousha-N 按编号排序，其余按文件名
+        const na = Number(a.match(/(\d+)/)?.[1] ?? NaN);
+        const nb = Number(b.match(/(\d+)/)?.[1] ?? NaN);
+        if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+        return a.localeCompare(b);
+      });
+  } catch {
+    return;
+  }
+  for (const f of files) {
+    await insertCharacter({
+      name: f.replace(/\.[^.]+$/, ''),
+      src: `/characters/${f}`,
+    });
+  }
+}
+
+// ---------- 首页 hero 可配置文案 ----------
+export interface HeroConfig {
+  name: string;
+  badges: string[];
+  defaultQuote: string;
+}
+
+export const HERO_DEFAULTS: HeroConfig = {
+  name: '李豆沙',
+  badges: ['🎋 粉丝牌 · Kimo熊', 'P-SP', '#大熊猫豆漫#'],
+  defaultQuote: '为了寻找失散伙伴而成为VUP的熊猫少女',
+};
+
+export async function getHeroConfig(): Promise<HeroConfig> {
+  try {
+    const raw = await getKv('hero_config');
+    if (!raw) return { ...HERO_DEFAULTS };
+    const j = JSON.parse(raw) as Partial<HeroConfig>;
+    return {
+      name: typeof j.name === 'string' && j.name.trim() ? j.name : HERO_DEFAULTS.name,
+      badges: Array.isArray(j.badges) ? j.badges.filter((b) => typeof b === 'string' && b.trim()) : [...HERO_DEFAULTS.badges],
+      defaultQuote:
+        typeof j.defaultQuote === 'string' && j.defaultQuote.trim()
+          ? j.defaultQuote
+          : HERO_DEFAULTS.defaultQuote,
+    };
+  } catch {
+    return { ...HERO_DEFAULTS };
+  }
+}
+
+export async function setHeroConfig(cfg: HeroConfig): Promise<void> {
+  await setKv('hero_config', JSON.stringify(cfg));
 }
 
 // ---------- 后台：直播回放人工标记 ----------
@@ -2307,6 +3225,7 @@ export interface LiveAdminRow {
   rtGift: number | null;
   rtGiftCoin: number | null;
   rtInteract: number | null;
+  rtDanmaku: number | null;
 }
 
 export async function queryLiveSessionsAdmin(): Promise<LiveAdminRow[]> {
@@ -2333,18 +3252,20 @@ export async function queryLiveSessionsAdmin(): Promise<LiveAdminRow[]> {
     rt_gift: number | null;
     rt_gift_coin: string | null;
     rt_interact: number | null;
+    rt_danmaku: number | null;
   }>(
     `SELECT s.id, s.title, s.category, s.category_manual, s.start_time, s.end_time,
             s.duration_sec, s.danmaku, s.sing_duration, s.game_duration, s.note, s.songs_override, s.song_strategy,
             COALESCE(c.cnt,0)::int AS songcount, s.songs_checked_at AS checkedat,
             COALESCE(d.cnt,0)::int AS dmcollected,
             rt.online_peak AS rt_online_peak, rt.sc_count AS rt_sc, rt.gift_count AS rt_gift,
-            rt.gift_coin AS rt_gift_coin, rt.interact_count AS rt_interact
+            rt.gift_coin AS rt_gift_coin, rt.interact_count AS rt_interact,
+            rt.danmaku_count AS rt_danmaku
      FROM live_session s
      LEFT JOIN (SELECT bvid, COUNT(*) AS cnt FROM live_song GROUP BY bvid) c ON c.bvid = s.id
      LEFT JOIN (SELECT bvid, COUNT(*) AS cnt FROM live_danmaku GROUP BY bvid) d ON d.bvid = s.id
      LEFT JOIN LATERAL (
-       SELECT online_peak, sc_count, gift_count, gift_coin, interact_count
+       SELECT online_peak, sc_count, gift_count, gift_coin, interact_count, danmaku_count
        FROM live_rt_session
        WHERE abs(start_time - s.start_time) < 21600   -- 开播时间相差 < 6h 视为同一场
        ORDER BY abs(start_time - s.start_time) ASC
@@ -2374,6 +3295,7 @@ export async function queryLiveSessionsAdmin(): Promise<LiveAdminRow[]> {
     rtGift: r.rt_gift != null ? Number(r.rt_gift) : null,
     rtGiftCoin: r.rt_gift_coin != null ? Number(r.rt_gift_coin) : null,
     rtInteract: r.rt_interact != null ? Number(r.rt_interact) : null,
+    rtDanmaku: r.rt_danmaku != null ? Number(r.rt_danmaku) : null,
   }));
 }
 

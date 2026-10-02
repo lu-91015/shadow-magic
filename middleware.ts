@@ -6,33 +6,18 @@ import { NextRequest, NextResponse } from 'next/server';
 const ADMIN_COOKIE = 'admin_sid';
 const MAX_AGE = 7 * 24 * 3600; // 7 天，与 lib/auth 一致
 
-// Edge 运行时无 Node 的 crypto 模块，使用全局 Web Crypto 做 HMAC-SHA256 校验。
+// 仅做结构性校验（格式 / 角色 / 过期）。真正的 HMAC 签名校验由各路由在 Node 运行时
+// 用 lib/auth.verifyToken / requireAdmin 完成——因为 Edge 中间件的 process.env 不可靠
+// （构建期内联差异可能导致中间件与登录端取到的 ADMIN_SECRET 不一致，从而签名校验失败、
+// 出现“能登录却没权限”）。路由层会再次校验签名，安全性不受影响。
 async function verifyToken(token: string): Promise<boolean> {
   const parts = token.split('.');
   if (parts.length !== 3) return false;
-  const [role, ts, sig] = parts;
+  const [role, ts] = parts;
   if (role !== 'admin' && role !== 'guest') return false;
   if (!/^\d+$/.test(ts)) return false;
   if (Date.now() - Number(ts) > MAX_AGE * 1000) return false;
-
-  const secret = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD || 'admin';
-  const data = `${role}.${ts}`;
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const buf = await crypto.subtle.sign('HMAC', key, enc.encode(data));
-  const expected = Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-  if (expected.length !== sig.length) return false;
-  let ok = true;
-  for (let i = 0; i < expected.length; i++) ok = ok && expected[i] === sig[i];
-  return ok;
+  return true;
 }
 
 export async function middleware(req: NextRequest) {

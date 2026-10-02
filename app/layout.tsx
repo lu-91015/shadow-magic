@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { SITE_TITLE, SITE_DESC } from '@/lib/constants';
 import SiteNav from '@/components/SiteNav';
+import Mascot from '@/components/Mascot';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -18,6 +19,7 @@ export default function RootLayout({
       <body>
         <SiteNav />
         <div className="pt-12">{children}</div>
+        <Mascot />
       </body>
     </html>
   );

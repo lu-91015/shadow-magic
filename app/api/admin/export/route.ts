@@ -36,8 +36,9 @@ function toCsv(rows: Record<string, unknown>[]): string {
   return '﻿' + lines.join('\n'); // BOM 便于 Excel 识别 UTF-8
 }
 
+// 全量数据导出：仅管理员可用（只读访客不得导出全站数据）
 export async function GET(req: NextRequest) {
-  if (!(await requireView(req)))
+  if (!(await requireAdmin(req)))
     return NextResponse.json({ ok: false }, { status: 401 });
   const type = req.nextUrl.searchParams.get('type') || 'clips';
   const ip = getClientIp(req);

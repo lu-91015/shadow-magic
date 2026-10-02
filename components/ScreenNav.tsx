@@ -5,8 +5,7 @@ import { useEffect, useState } from 'react';
 // 右侧幕导航：指示当前整屏分幕位置，点击平滑切换到对应幕
 const SCREENS = [
   { id: 'screen-hero', label: '首页' },
-  { id: 'screen-clips', label: '切片墙' },
-  { id: 'screen-portal', label: '更多入口' },
+  { id: 'screen-profile', label: '豆漫墙' },
 ];
 
 export default function ScreenNav() {

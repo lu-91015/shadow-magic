@@ -24,6 +24,15 @@ body {
   @apply bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl;
 }
 
+/* 隐藏滚动条但保留滚动能力（分幕整屏布局里，滚动条会破坏画面感） */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .chip {
   @apply px-3 py-1 rounded-full text-xs bg-white/10 text-brand-100;
 }
@@ -62,4 +71,20 @@ body {
   to {
     transform: translateX(-50%);
   }
+}
+
+/* 简易 Live2D 小人：点击弹跳 */
+@keyframes mascot-pop {
+  0% {
+    transform: scale(1) translateY(0);
+  }
+  35% {
+    transform: scale(1.12) translateY(-10px);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
+}
+.mascot-pop {
+  animation: mascot-pop 0.42s ease-out;
 }

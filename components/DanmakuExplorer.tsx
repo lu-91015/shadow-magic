@@ -23,7 +23,9 @@ export default function DanmakuExplorer({
 }) {
   const [replays] = useState<Replay[]>(initialReplays);
   const [bvid, setBvid] = useState('');
-  const [senders, setSenders] = useState<{ sender: string; count: number }[]>([]);
+  const [senders, setSenders] = useState<
+    { sender: string; senderName: string | null; senderUid: number | null; count: number }[]
+  >([]);
   const [phrases, setPhrases] = useState<{ text: string; count: number }[]>([]);
   const [q, setQ] = useState('');
   const [search, setSearch] = useState<{ q: string; bvid: string; count: number } | null>(null);
@@ -135,7 +137,18 @@ export default function DanmakuExplorer({
                   <tr key={s.sender} className="border-b border-white/5">
                     <td className="px-3 py-1.5 text-white/40 w-8">{i + 1}</td>
                     <td className="px-3 py-1.5 text-white/80">
-                      用户 <span className="font-mono text-xs">{s.sender}</span>
+                      {s.senderName ? (
+                        <>
+                          {s.senderName}
+                          {s.senderUid != null && (
+                            <span className="ml-1 text-xs text-white/40">(uid {s.senderUid})</span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          匿名 <span className="font-mono text-xs">{s.sender}</span>
+                        </>
+                      )}
                     </td>
                     <td className="px-3 py-1.5 text-right text-brand-200">{s.count}</td>
                   </tr>

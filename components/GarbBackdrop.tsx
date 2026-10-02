@@ -35,9 +35,9 @@ export default function GarbBackdrop() {
           }`}
         />
       ))}
-      {/* 遮罩：保证前景文字可读 */}
-      <div className="absolute inset-0 bg-ink-900/70" />
-      <div className="absolute inset-0 bg-gradient-to-b from-ink-900/40 via-transparent to-ink-900/80" />
+      {/* 遮罩：保证前景文字可读（调淡以提亮整体色调） */}
+      <div className="absolute inset-0 bg-ink-900/40" />
+      <div className="absolute inset-0 bg-gradient-to-b from-ink-900/20 via-transparent to-ink-900/55" />
     </div>
   );
 }

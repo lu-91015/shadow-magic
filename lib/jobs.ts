@@ -39,6 +39,7 @@ import { pullCommentsForOid } from './comments';
 import { localizeDynImages } from './dynamics';
 import { scanBvid } from '../scripts/sync-songs';
 import { collectDanmakuForBvid } from '../scripts/sync-danmaku';
+import { matchReplaySenders } from './match-senders';
 import { LIVE_SERIES_ID } from './constants';
 import { notifyFailure } from './notify';
 
@@ -54,10 +55,35 @@ export const JOB_TYPES: { type: string; label: string; needPayload: boolean }[] 
   { type: 'live', label: '直播回放同步', needPayload: false },
   { type: 'songs', label: '录播歌单识别（OCR）', needPayload: false },
   { type: 'danmaku', label: '直播弹幕收集', needPayload: false },
+  { type: 'senders', label: '弹幕身份回填（哈希→昵称）', needPayload: false },
+  {
+    type: 'replaySync',
+    label: '直播回放自动同步（新回放+弹幕+身份回填）',
+    needPayload: false,
+  },
   { type: 'trackStats', label: '李豆沙数据追踪（粉丝/大航海）', needPayload: false },
 ];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// 从B站"直播回放"合集拉取全部场次并 upsert 进 live_session（live / replaySync 共用）
+async function syncLiveReplayList(log: JobLogger): Promise<number> {
+  const sessions: any[] = [];
+  let page = 1;
+  while (page <= 200) {
+    const pl = await getLivePlayList(LIVE_SERIES_ID, Number(UID), page, 30).catch(
+      () => null,
+    );
+    if (!pl || pl.items.length === 0) break;
+    sessions.push(...pl.items);
+    if (!pl.hasMore) break;
+    page++;
+    await sleep(400);
+  }
+  for (const s of sessions) if (s.liveId) await upsertLiveSession(s);
+  log(`回放列表拉取：${sessions.length} 场`);
+  return sessions.length;
+}
 
 // 取消标志：存到 globalThis，跨模块热更新保持同一份引用，
 // 这样即使任务在旧模块闭包中运行，新代码设置的取消也能被它读到。
@@ -335,20 +361,71 @@ export async function runJob(
       return `评论同步完成：新增 ${total} 条（${scope}）`;
     }
     case 'live': {
-      const sessions: any[] = [];
-      let page = 1;
-      while (page <= 200) {
-        const pl = await getLivePlayList(LIVE_SERIES_ID, Number(UID), page, 30).catch(
-          () => null,
-        );
-        if (!pl || pl.items.length === 0) break;
-        sessions.push(...pl.items);
-        if (!pl.hasMore) break;
-        page++;
-        await sleep(400);
+      const n = await syncLiveReplayList(log);
+      return `直播回放同步完成：${n} 场`;
+    }
+    case 'senders': {
+      const r = await matchReplaySenders(log);
+      return `弹幕身份回填完成：${r.sessions} 场对齐，命中 ${r.hitMain}+${r.hitUnique}，回填 ${r.resolved} 个身份 / ${r.updated} 条弹幕，剩余未识别 ${r.left} 条`;
+    }
+    case 'replaySync': {
+      // 自动链：拉新回放 → 给近期未收全弹幕的回放补弹幕 → 身份回填
+      const days = Number(payload?.days ?? 30) || 30;
+      const n = await syncLiveReplayList(log);
+      // 近期 & 弹幕未收全的场次（含从未收集的）；B站报 0 条的天然跳过
+      const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
+      const { rows: todo } = await getPool().query<{ id: string; have: string }>(
+        `SELECT s.id, COALESCE(d.cnt,0)::text AS have
+         FROM live_session s
+         LEFT JOIN (SELECT bvid, COUNT(*) AS cnt FROM live_danmaku GROUP BY bvid) d ON d.bvid = s.id
+         WHERE s.start_time >= $1
+           AND (COALESCE(d.cnt,0) = 0
+                OR COALESCE(s.danmaku,0) - COALESCE(d.cnt,0) > 50)
+         ORDER BY s.start_time DESC LIMIT 50`,
+        [cutoff],
+      );
+      log(`近 ${days} 天待补弹幕：${todo.length} 场`);
+      let ok = 0;
+      let failed = 0;
+      for (const r of todo) {
+        if (isRunCancelled(runId)) {
+          log('已取消，停止补弹幕');
+          break;
+        }
+        const res = await collectDanmakuForBvid(r.id).catch((e: any) => ({
+          ok: false,
+          count: 0,
+          reason: e?.message ?? '异常',
+        }));
+        if (res.ok) ok++;
+        else failed++;
+        log(`${r.id}（已有 ${r.have} 条）：${res.ok ? `收集 ${res.count} 条` : '失败：' + (res.reason ?? '')}`);
+        await sleep(300);
       }
-      for (const s of sessions) if (s.liveId) await upsertLiveSession(s);
-      return `直播回放同步完成：${sessions.length} 场`;
+      const m = await matchReplaySenders(log);
+      // 歌单识别（OCR）：只识别近 N 天、从未识别过且未手动关闭的回放，控制单次时长
+      const { rows: songTodo } = await getPool().query<{ id: string }>(
+        `SELECT id FROM live_session
+         WHERE start_time >= $1 AND songs_checked_at IS NULL
+           AND COALESCE(songs_override, false) = false
+         ORDER BY start_time DESC LIMIT 8`,
+        [cutoff],
+      );
+      log(`近 ${days} 天待歌单识别：${songTodo.length} 场`);
+      let sungOk = 0;
+      for (const r of songTodo) {
+        if (isRunCancelled(runId)) {
+          log('已取消，停止歌单识别');
+          break;
+        }
+        const res = await scanBvid(r.id).catch(() => ({ ok: false, songs: 0 }));
+        if (res.ok) sungOk++;
+        log(`歌单识别 ${r.id}：${res.ok ? res.songs + ' 首' : '失败'}`);
+        await sleep(500);
+      }
+      const summary = `自动同步完成：回放列表 ${n} 场，补弹幕 ${ok}/${todo.length}（失败 ${failed}），身份回填 ${m.updated} 条，歌单识别 ${sungOk}/${songTodo.length}`;
+      if (failed > 0) throw new Error(`${summary}；存在弹幕收集失败场次（B站风控时会自动重试）`);
+      return summary;
     }
     case 'songs': {
       if (payload?.bvid) {

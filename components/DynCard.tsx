@@ -40,7 +40,9 @@ export default function DynCard({
         />
         <div>
           <div className="text-brand-100 font-medium">{d.name}</div>
-          <div className="text-xs text-white/40">{d.timeText || fmtTime(d.pubTime)}</div>
+          {/* 优先用 pubTime 换算的绝对时间：timeText 是采集时冻结的相对时间
+              （如“36分钟前”），入库后永不更新，会造成时间错乱的假象 */}
+          <div className="text-xs text-white/40">{fmtTime(d.pubTime) || d.timeText}</div>
         </div>
       </div>
 
