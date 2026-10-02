@@ -873,3 +873,9 @@
  GET /api/mascot/lines 200 in 166ms
  ✓ Compiled in 172ms (683 modules)
  GET /api/mascot/lines 200 in 143ms
+ GET / 200 in 108ms
+ GET /api/mascot/lines 200 in 17ms
+ GET /api/mascot/lines 200 in 20ms
+ GET / 200 in 219ms
+ GET /api/mascot/lines 200 in 12ms
+ GET /api/mascot/lines 200 in 47ms

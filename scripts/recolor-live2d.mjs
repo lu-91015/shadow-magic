@@ -99,7 +99,73 @@ function redToBlueBow(r, g, b) {
   return [nr, ng, nb];
 }
 
-// 在脸部贴图上画「眼下星星」（李豆沙标志性细节：左眼下蓝色四角星）
+// 五角星多边形顶点（外半径 R，内半径 0.42R，尖端朝上）
+function starPoly(R) {
+  const pts = [];
+  for (let i = 0; i < 5; i++) {
+    const aO = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+    const aI = aO + Math.PI / 5;
+    pts.push([Math.cos(aO) * R, Math.sin(aO) * R]);
+    pts.push([Math.cos(aI) * R * 0.42, Math.sin(aI) * R * 0.42]);
+  }
+  return pts;
+}
+
+function pointInPoly(px, py, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1];
+    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function distToEdges(px, py, pts) {
+  let m = Infinity;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1];
+    const vx = xj - xi, vy = yj - yi;
+    const t = clamp(((px - xi) * vx + (py - yi) * vy) / (vx * vx + vy * vy), 0, 1);
+    const d = Math.hypot(px - (xi + t * vx), py - (yi + t * vy));
+    if (d < m) m = d;
+  }
+  return m;
+}
+
+// 绘制一颗五角星（可限制只画在蓝色像素上）
+function paintStar5(data, width, height, ch, cx, cy, R, col, core, onlyBlue) {
+  const pts = starPoly(R);
+  let n = 0;
+  const rOut = Math.ceil(R) + 2;
+  for (let dy = -rOut; dy <= rOut; dy++) {
+    for (let dx = -rOut; dx <= rOut; dx++) {
+      const inside = pointInPoly(dx, dy, pts);
+      const edge = distToEdges(dx, dy, pts);
+      if (!inside && edge > 1.4) continue;
+      const x = Math.round(cx + dx), y = Math.round(cy + dy);
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+      const o = (y * width + x) * ch;
+      if (ch === 4 && data[o + 3] < 8) continue;
+      const r0 = data[o], g0 = data[o + 1], b0 = data[o + 2];
+      if (onlyBlue) {
+        const [h0] = rgb2hsv(r0, g0, b0);
+        if (!(h0 >= 185 && h0 <= 265)) continue; // 只画在蓝色面上
+      }
+      // 边缘 1.4px 抗锯齿淡出
+      const alpha = inside ? (edge < 1.4 ? 0.45 + (edge / 1.4) * 0.55 : 1) : 1 - edge / 1.4;
+      if (alpha <= 0.03) continue;
+      const d = Math.hypot(dx, dy);
+      const cc = d < R * 0.3 ? core : col;
+      data[o] = Math.round(r0 * (1 - alpha) + cc[0] * alpha);
+      data[o + 1] = Math.round(g0 * (1 - alpha) + cc[1] * alpha);
+      data[o + 2] = Math.round(b0 * (1 - alpha) + cc[2] * alpha);
+      n++;
+    }
+  }
+  return n;
+}
+
+// 在脸部贴图上画「眼下星星」（李豆沙标志性细节：左眼下蓝色五角星）
 function drawCheekStar(data, width, height, ch) {
   // 脸部圆形贴图在 atlas 左上角（椭圆范围，比例坐标）
   const cx0 = 0.119, cy0 = 0.142, ra = 0.112, rb = 0.137; // 椭圆中心与半径（比例）
@@ -107,32 +173,10 @@ function drawCheekStar(data, width, height, ch) {
   const a = ra * width, b = rb * height;
   // 星星位置：观众视角右眼外下角、贴着下眼睑（对齐官方立绘）
   const sx = cx + a * 0.60, sy = cy + b * 0.52;
-  const R = a * 0.13; // 星星大小
-  const p = 0.55; // 四角星凹度
-  const col = [116, 158, 232]; // 蓝星
-  const core = [232, 242, 255]; // 星心微亮
-  let n = 0;
-  const rOut = Math.ceil(R) + 2;
-  for (let dy = -rOut; dy <= rOut; dy++) {
-    for (let dx = -rOut; dx <= rOut; dx++) {
-      const adx = Math.abs(dx), ady = Math.abs(dy);
-      // 四角星距离场：|x|^p+|y|^p 归一化
-      const d = (Math.pow(adx, p) + Math.pow(ady, p)) / Math.pow(R, p);
-      if (d > 1.12) continue;
-      const x = Math.round(sx + dx), y = Math.round(sy + dy);
-      if (x < 0 || y < 0 || x >= width || y >= height) continue;
-      const o = (y * width + x) * ch;
-      if (ch === 4 && data[o + 3] < 8) continue;
-      // 软边缘 + 星心提亮
-      const alpha = d < 0.92 ? 1 : clamp((1.12 - d) / 0.2, 0, 1);
-      const cc = d < 0.45 ? core : col;
-      data[o] = Math.round(data[o] * (1 - alpha) + cc[0] * alpha);
-      data[o + 1] = Math.round(data[o + 1] * (1 - alpha) + cc[1] * alpha);
-      data[o + 2] = Math.round(data[o + 2] * (1 - alpha) + cc[2] * alpha);
-      n++;
-    }
-  }
-  console.log(`  t0: cheek star ${n} px @ (${Math.round(sx)},${Math.round(sy)})`);
+  const R = a * 0.14; // 星星大小（五角星外半径）
+  const col = [116, 158, 232]; // 蓝星（实心）
+  const n = paintStar5(data, width, height, ch, sx, sy, R, col, col, false);
+  console.log(`  t0: cheek star(5) ${n} px @ (${Math.round(sx)},${Math.round(sy)})`);
 }
 
 // ---------- texture_00：头发银白 + 红丝带转蓝 + 脸颊星星 ----------
@@ -166,42 +210,12 @@ function recolorT0(data, width, height, ch) {
   console.log(`  t0: hair ${hair} px, bow ${bow} px`);
 }
 
-// 四角星绘制辅助（只画在 mask 判定为蓝色的像素上，避免盖住白条纹/高光）
-function paintStar(data, width, height, ch, cx, cy, R, col, core, onlyBlue) {
-  const p = 0.55;
-  let n = 0;
-  const rOut = Math.ceil(R) + 2;
-  for (let dy = -rOut; dy <= rOut; dy++) {
-    for (let dx = -rOut; dx <= rOut; dx++) {
-      const adx = Math.abs(dx), ady = Math.abs(dy);
-      const d = (Math.pow(adx, p) + Math.pow(ady, p)) / Math.pow(R, p);
-      if (d > 1.12) continue;
-      const x = Math.round(cx + dx), y = Math.round(cy + dy);
-      if (x < 0 || y < 0 || x >= width || y >= height) continue;
-      const o = (y * width + x) * ch;
-      if (ch === 4 && data[o + 3] < 8) continue;
-      const r0 = data[o], g0 = data[o + 1], b0 = data[o + 2];
-      if (onlyBlue) {
-        const [h0] = rgb2hsv(r0, g0, b0);
-        if (!(h0 >= 185 && h0 <= 265)) continue; // 只画在蓝色裙面上
-      }
-      const alpha = d < 0.92 ? 1 : clamp((1.12 - d) / 0.2, 0, 1);
-      const cc = d < 0.45 ? core : col;
-      data[o] = Math.round(r0 * (1 - alpha) + cc[0] * alpha);
-      data[o + 1] = Math.round(g0 * (1 - alpha) + cc[1] * alpha);
-      data[o + 2] = Math.round(b0 * (1 - alpha) + cc[2] * alpha);
-      n++;
-    }
-  }
-  return n;
-}
-
-// 裙摆星星图案 + 胸口蝴蝶结白色结心（对齐偶像服立绘）
+// 裙摆星星图案 + 胸口蝴蝶结白色结心（对齐偶像服立绘；星星为五角星）
 function decorateT1(data, width, height, ch) {
   // 裙子 bbox（atlas 像素）
   const sL = 16, sR = 780, sT = 1195, sB = 1430;
   const bw = sR - sL, bh = sB - sT;
-  const white = [245, 249, 255], gold = [242, 196, 92], coreW = [255, 255, 255], coreG = [255, 244, 214];
+  const white = [245, 249, 255], gold = [242, 196, 92], coreW = white, coreG = gold;
   let total = 0;
   const stars = [
     [0.20, 0.32, 15, white, coreW],
@@ -211,9 +225,9 @@ function decorateT1(data, width, height, ch) {
     [0.30, 0.80, 12, white, coreW],
   ];
   for (const [fx, fy, r, col, core] of stars) {
-    total += paintStar(data, width, height, ch, sL + fx * bw, sT + fy * bh, r, col, core, true);
+    total += paintStar5(data, width, height, ch, sL + fx * bw, sT + fy * bh, r, col, core, true);
   }
-  total += paintStar(data, width, height, ch, sL + 0.72 * bw, sT + 0.42 * bh, 24, gold, coreG, true);
+  total += paintStar5(data, width, height, ch, sL + 0.72 * bw, sT + 0.42 * bh, 26, gold, coreG, true);
   console.log(`  t1 decorate: skirt stars ${total} px`);
 
   // 胸口蝴蝶结白色结心（打结点在两环交汇处）
