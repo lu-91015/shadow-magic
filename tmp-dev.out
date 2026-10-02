@@ -639,3 +639,41 @@
  GET /api/mascot/lines 200 in 79ms
  GET /live2d/lidousha/Hiyori.pose3.json 404 in 35ms
  GET /live2d/lidousha/Hiyori.physics3.json 404 in 35ms
+ GET / 200 in 134ms
+ GET /api/mascot/lines 200 in 10ms
+ GET /api/characters 200 in 16ms
+ GET /api/characters 200 in 16ms
+ GET /api/mascot/lines 200 in 53ms
+ GET /live2d/lidousha/Hiyori.pose3.json 404 in 39ms
+ GET /live2d/lidousha/Hiyori.physics3.json 404 in 40ms
+ GET / 200 in 179ms
+ GET /api/mascot/lines 200 in 12ms
+ GET /api/mascot/lines 200 in 17ms
+ GET /api/characters 200 in 69ms
+ GET /api/characters 200 in 71ms
+ GET /live2d/lidousha/Hiyori.physics3.json 404 in 54ms
+ GET /live2d/lidousha/Hiyori.pose3.json 404 in 56ms
+ GET / 200 in 113ms
+ GET /api/mascot/lines 200 in 14ms
+ GET /api/characters 200 in 18ms
+ GET /api/characters 200 in 62ms
+ GET /api/mascot/lines 200 in 63ms
+ GET /live2d/lidousha/Hiyori.physics3.json 404 in 63ms
+ GET /live2d/lidousha/Hiyori.pose3.json 404 in 63ms
+ ✓ Compiled in 557ms (653 modules)
+ ✓ Compiled /api/mascot/lines in 194ms (683 modules)
+ GET /api/mascot/lines 200 in 985ms
+ GET /api/mascot/lines 200 in 1009ms
+ ✓ Compiled /_not-found in 88ms (672 modules)
+ GET /live2d/lidousha/Hiyori.pose3.json 404 in 156ms
+ GET /live2d/lidousha/Hiyori.physics3.json 404 in 156ms
+ GET /live2d/lidousha/Hiyori.pose3.json 404 in 90ms
+ GET /live2d/lidousha/Hiyori.physics3.json 404 in 89ms
+ GET / 200 in 201ms
+ ✓ Compiled /api/characters in 42ms (367 modules)
+ GET /api/mascot/lines 200 in 247ms
+ GET /api/characters 200 in 259ms
+ GET /api/characters 200 in 261ms
+ GET /api/mascot/lines 200 in 311ms
+ GET /live2d/lidousha/Hiyori.pose3.json 404 in 61ms
+ GET /live2d/lidousha/Hiyori.physics3.json 404 in 61ms

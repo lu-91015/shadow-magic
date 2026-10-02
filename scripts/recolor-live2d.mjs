@@ -105,9 +105,9 @@ function drawCheekStar(data, width, height, ch) {
   const cx0 = 0.119, cy0 = 0.142, ra = 0.112, rb = 0.137; // 椭圆中心与半径（比例）
   const cx = cx0 * width, cy = cy0 * height;
   const a = ra * width, b = rb * height;
-  // 星星位置：椭圆内右下（=角色左眼下方脸颊）
-  const sx = cx + a * 0.46, sy = cy + b * 0.40;
-  const R = a * 0.16; // 星星大小
+  // 星星位置：观众视角右眼外下角、贴着下眼睑（对齐官方立绘）
+  const sx = cx + a * 0.60, sy = cy + b * 0.52;
+  const R = a * 0.13; // 星星大小
   const p = 0.55; // 四角星凹度
   const col = [116, 158, 232]; // 蓝星
   const core = [232, 242, 255]; // 星心微亮
