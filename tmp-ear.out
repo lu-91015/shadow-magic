@@ -1,0 +1,36 @@
+→ BV1RbaB6UEhz 【直播回放】在psp歌会！ 2026年10月01日16点场 (9040s)
+    定位到 12 个候选段落：19′30″(56) 21′00″(137) 22′30″(91) 25′00″(62) 26′30″(82) 28′00″(39) 41′00″(62) 43′00″(29) 45′00″(35) 124′30″(26) 134′00″(29) 139′00″(26)
+    1170s：World.Execute (Me) ;（已存在，跳过）
+    1260s：未识别（no_match）
+    1290s：World.Execute (Me) ;（已存在，跳过）
+    1380s 音频抽取失败：ffmpeg exit 2812791304: &f=u_0_0&qn_dyeid=48297031e59083d40007d1c76abf6a5d&agrr=1&buvid=9B281183-6687-6584-36F8-F3EFE073262514436infoc&build=0&orderid=0,3.
+Error opening input files: Server returned 5XX Server Error reply
+
+    1410s 音频抽取失败：ffmpeg exit 2812791304: &f=u_0_0&qn_dyeid=48297031e59083d40007d1c76abf6a5d&agrr=1&buvid=9B281183-6687-6584-36F8-F3EFE073262514436infoc&build=0&orderid=0,3.
+Error opening input files: Server returned 5XX Server Error reply
+
+    1350s：World.Execute (Me) ;（已存在，跳过）
+    1500s：未识别（no_match）
+    1530s 音频抽取失败：ffmpeg exit 2812791304: &f=u_0_0&qn_dyeid=48297031e59083d40007d1c76abf6a5d&agrr=1&buvid=9B281183-6687-6584-36F8-F3EFE073262514436infoc&build=0&orderid=0,3.
+Error opening input files: Server returned 5XX Server Error reply
+
+    1560s 音频抽取失败：ffmpeg exit 2812791304: &f=u_0_0&qn_dyeid=48297031e59083d40007d1c76abf6a5d&agrr=1&buvid=9B281183-6687-6584-36F8-F3EFE073262514436infoc&build=0&orderid=0,3.
+Error opening input files: Server returned 5XX Server Error reply
+
+    1620s：未识别（no_match）
+    1590s：♪ ʮ��犵đِ� — S.O.S (shazam)
+    1680s：未识别（no_match）
+    1710s：未识别（no_match）
+    2460s：未识别（no_match）
+    2490s：未识别（no_match）
+    2580s：未识别（no_match）
+    2610s：未识别（no_match）
+    2700s：未识别（no_match）
+    2730s：未识别（no_match）
+    7470s：Holiday Holiday（已存在，跳过）
+    8040s：未识别（no_match）
+    8070s：未识别（no_match）
+    8340s：未识别（no_match）
+    8340s：Self-Affirmation Explosion! Love Love Song (Instrumental)（不像歌名，跳过）
+    完成：新识别 1 首
+识别 1 首

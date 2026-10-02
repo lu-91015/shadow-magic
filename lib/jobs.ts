@@ -39,6 +39,7 @@ import { pullCommentsForOid } from './comments';
 import { localizeDynImages } from './dynamics';
 import { scanBvid } from '../scripts/sync-songs';
 import { collectDanmakuForBvid } from '../scripts/sync-danmaku';
+import { runEarAll } from '../scripts/song-by-ear';
 import { matchReplaySenders } from './match-senders';
 import { LIVE_SERIES_ID } from './constants';
 import { notifyFailure } from './notify';
@@ -55,6 +56,7 @@ export const JOB_TYPES: { type: string; label: string; needPayload: boolean }[] 
   { type: 'live', label: '直播回放同步', needPayload: false },
   { type: 'songs', label: '录播歌单识别（OCR）', needPayload: false },
   { type: 'danmaku', label: '直播弹幕收集', needPayload: false },
+  { type: 'ear', label: '听歌识曲（弹幕定位+Shazam）', needPayload: false },
   { type: 'senders', label: '弹幕身份回填（哈希→昵称）', needPayload: false },
   {
     type: 'replaySync',
@@ -442,6 +444,11 @@ export async function runJob(
         await sleep(500);
       }
       return `歌单识别完成：${ok}/${todo.length} 场`;
+    }
+    case 'ear': {
+      const limit = Number(payload?.limit ?? 60) || 60;
+      const msg = await runEarAll(limit);
+      return msg;
     }
     case 'danmaku': {
       const bvid = (payload?.bvid || '').trim();

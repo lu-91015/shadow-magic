@@ -1,19 +1,27 @@
-// 听歌识曲：通过弹幕打 call 位置定位唱歌段落 → ffmpeg 抽音频 → Shazam 识别 → 写入 live_song(source='ear')。
-// 比 OCR 准：OCR 只能识别「歌单面板」，本脚本识别的是实际唱出的歌（含歌单外的歌）。
+// 听歌识曲（精确模式）：弹幕定位唱歌段落 → ffmpeg 抽 30s 音频 → 识别 → 写入 live_song(source='ear')。
+// 比 OCR 准：识别的是「实际唱出的歌」（含歌单外的歌）。
+//
+// 精确策略：
+//  - 30s 片段（而非 12s），提高 Shazam 命中率；
+//  - 每个候选段落做多次采样（t / +30s / +60s），取「多数共识」才肯认，避免偶发误识；
+//  - 定位信号：弹幕密度 + 打 call / 「/李豆沙/」类 call 弹幕 + 求歌名关键词，加权；
+//  - 每场抓更多段落（默认 18，一般直播 >10 首歌），宁可慢也要尽量覆盖；
+//  - 与「同场已识别歌曲（含 OCR）」交叉核对：OCR 与听歌识曲都命中 = 高置信确认。
+//
+// 多种识别工具：默认 Shazam；若设置 AUDD_TOKEN 则追加 audd.io 作为第二工具，二者一致才算高置信。
 //
 // 用法：
-//   npm run songs:ear                      # 处理近期未处理的歌回场次（LIMIT 控制）
-//   BVID=BV1xxx npm run songs:ear          # 只处理指定场次
-//   SEGS=6 npm run songs:ear               # 每场最多识别 6 个段落（默认 4）
-//
-// 依赖：tools/ffmpeg/bin/ffmpeg.exe；.venv 中的 shazamio（pip install shazamio）
+//   npm run songs:ear                 # 处理近期未跑过识曲的歌回（LIMIT 控制场次数）
+//   BVID=BV1xxx npm run songs:ear     # 指定场次
+//   SEGS=20 MIN_GAP=90 npm run songs:ear   # 调段落数与最小间隔
+//   OFFSET_BASE=15 npm run songs:ear  # 采样基准偏移（本地/服务器错开，便于查缺补漏）
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
 import { ensureReady, getPool } from '../lib/db';
 import { getVideoCid, getVideoPlayUrl } from '../lib/bilibili';
-import { matchKnown } from '../lib/known-songs';
+import { matchKnown, normalize, isLikelySongTitle } from '../lib/known-songs';
 import { FFMPEG, FFMPEG_HEADERS, PYTHON } from './sync-songs';
 
 const envFile = path.join(process.cwd(), '.env');
@@ -24,44 +32,50 @@ if (fs.existsSync(envFile))
   }
 
 const BVID = process.env.BVID || '';
-const LIMIT = Number(process.env.LIMIT ?? 8);
-const SEGS = Number(process.env.SEGS ?? 4);
+const LIMIT = Number(process.env.LIMIT ?? 60);
+const SEGS = Number(process.env.SEGS ?? 18); // 每场最多识别段落数（>10 首歌留余量）
+const MIN_GAP = Number(process.env.MIN_GAP ?? 90); // 相邻段落最小间隔（秒）
+const CLIP_SEC = Number(process.env.CLIP_SEC ?? 30); // 每段音频时长（秒）
+const OFFSET_BASE = Number(process.env.OFFSET_BASE ?? 0); // 采样基准偏移（本地/服务器错开）
 const WINDOW = 30; // 弹幕密度统计窗口（秒）
-const CLIP_SEC = 12; // 每段抽取的音频时长
-const MIN_GAP = 240; // 两个识别段落的最小间隔（秒）
 const AUDIO_ID = path.join(process.cwd(), 'scripts', 'audio_id.py');
 const LOCAL_FFMPEG_DIR = path.join(process.cwd(), 'tools', 'ffmpeg', 'bin');
+// pydub（shazamio 依赖）需要 ffmpeg 在 PATH：取 FFMPEG 所在目录；若只是裸命令（如 'ffmpeg'），用 /usr/local/bin
+const FFMPEG_DIR = fs.existsSync(FFMPEG) ? path.dirname(FFMPEG) : '/usr/local/bin';
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// 歌曲相关弹幕关键词（打 call / 求歌名）
-const CALL_RE = /什么歌|歌名|唱的|翻唱|cover|好听|开口|天籁|跪了|唱功|歌歌|求歌|这歌|神仙|唱得|起鸡皮/i;
+// 定位信号：弹幕密度 + 打 call / 求歌名关键词 + 「/李豆沙/」类 call 弹幕
+const CALL_RE =
+  /什么歌|歌名|唱的|翻唱|cover|好听|开口|天籁|跪了|唱功|歌歌|求歌|这歌|神仙|唱得|起鸡皮|打[callCALL]|点歌|好听|绝了|上头|循环|单曲循环/i;
+// 打 call 弹幕：B站 call 特效弹幕形如 "/李豆沙/" 或 "/xxx/"，或含「打call」
+const SLASH_CALL_RE = /\/[^\/\s]{1,30}\//;
 
 interface Seg {
   t: number; // 视频时间（秒）
   score: number;
 }
 
-// 从弹幕分布定位唱歌段落：30s 窗口计数 + 关键词加权，取得分最高的互不重叠段
-function detectSegments(
-  dan: { vtime: number; text: string | null }[],
-  duration: number,
-): Seg[] {
+// 从弹幕分布定位唱歌段落：30s 窗口计数 + 打 call/关键词加权，取互不重叠的 top 段落
+function detectSegments(dan: { vtime: number; text: string | null }[], duration: number): Seg[] {
   const buckets = new Map<number, { count: number; weight: number }>();
   for (const d of dan) {
     if (!Number.isFinite(d.vtime) || d.vtime < 0) continue;
     const b = Math.floor(d.vtime / WINDOW);
     const cur = buckets.get(b) ?? { count: 0, weight: 0 };
     cur.count++;
-    if (d.text && CALL_RE.test(d.text)) cur.weight += 3;
+    if (d.text) {
+      if (CALL_RE.test(d.text)) cur.weight += 3;
+      if (SLASH_CALL_RE.test(d.text)) cur.weight += 6; // call 特效弹幕强信号
+    }
     buckets.set(b, cur);
   }
   const scored: Seg[] = [];
   for (const [b, v] of buckets) {
-    const t = b * WINDOW;
-    if (t < 60 || t > duration - 90) continue; // 跳过开头/结尾
+    const t = b * WINDOW + OFFSET_BASE;
+    if (t < 90 || t > duration - CLIP_SEC - 30) continue; // 跳过开头/结尾
     scored.push({ t, score: v.count + v.weight });
   }
   scored.sort((a, b) => b.score - a.score);
@@ -103,15 +117,17 @@ interface EarResult {
   ok: boolean;
   title?: string;
   artist?: string;
+  provider?: string;
   error?: string;
 }
 
-function runAudioId(wav: string): Promise<EarResult> {
+// 调用 audio_id.py：provider 可空（默认 shazam）；audd 需 AUDD_TOKEN
+function runAudioId(wav: string, provider?: string): Promise<EarResult> {
   return new Promise((resolve, reject) => {
     const env = { ...process.env };
-    // pydub（shazamio 依赖）需要 ffmpeg 在 PATH 中
-    env.PATH = `${LOCAL_FFMPEG_DIR};${env.PATH ?? ''}`;
-    const ps = spawn(PYTHON, [AUDIO_ID, wav], { windowsHide: true, env });
+    env.PATH = `${LOCAL_FFMPEG_DIR};${FFMPEG_DIR};${env.PATH ?? ''}`;
+    const args = provider ? [AUDIO_ID, wav, provider] : [AUDIO_ID, wav];
+    const ps = spawn(PYTHON, args, { windowsHide: true, env });
     let out = '';
     let err = '';
     ps.stdout.on('data', (d) => (out += d.toString()));
@@ -136,6 +152,95 @@ async function ensureEarTable() {
     hits INTEGER NOT NULL DEFAULT 0,
     created_at BIGINT
   )`);
+}
+
+// 带重试的音频抽取：B站 CDN 偶发 5XX，失败后重新取播放地址再试
+async function extractWithRetry(
+  getUrl: () => Promise<string | null>,
+  t: number,
+  wav: string,
+): Promise<boolean> {
+  let url = await getUrl().catch(() => null);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (!url) url = await getUrl().catch(() => null);
+    if (!url) {
+      await sleep(1000);
+      continue;
+    }
+    try {
+      await runFfmpegExtract(url, t, wav);
+      return true;
+    } catch (e) {
+      console.log(`    ${t}s 音频抽取失败（第${attempt + 1}次）：${(e as Error).message.slice(0, 60)}`);
+      await sleep(1500);
+      url = null; // 强制下次重新取地址（token 可能失效）
+    }
+  }
+  return false;
+}
+
+// 对一段候选窗口做多次采样 + 多工具识别，返回共识结果（多数一致才肯认）
+async function recognizeSegment(
+  getUrl: () => Promise<string | null>,
+  seg: Seg,
+  duration: number,
+  tmp: string,
+  auddEnabled: boolean,
+): Promise<{ title: string; artist: string; t: number; tools: string } | null> {
+  const offsets = [0, 30, 60].filter((o) => seg.t + o <= duration - CLIP_SEC - 5);
+  const matched: { t: number; res: EarResult }[] = [];
+  for (let i = 0; i < offsets.length; i++) {
+    const t = seg.t + offsets[i];
+    const wav = path.join(tmp, `seg${Math.floor(t)}.wav`);
+    const ok = await extractWithRetry(getUrl, t, wav);
+    if (!ok) continue;
+    // 主工具 shazam
+    let res: EarResult;
+    try {
+      res = await runAudioId(wav);
+    } catch (e) {
+      console.log(`    ${t}s 识别异常：${(e as Error).message}`);
+      continue;
+    }
+    if (res.ok && res.title) {
+      matched.push({ t, res });
+      // 命中后追加一次同窗口采样做共识确认（不无限采样）
+      if (i < offsets.length - 1 && matched.length < 2) continue;
+      break;
+    }
+    console.log(`    ${t}s：未识别（${res.error ?? 'no_match'}）`);
+    if (i === 0) continue; // 第一采没命中，继续试下一采
+    break;
+  }
+  if (matched.length === 0) return null;
+
+  // 多工具交叉验证（可选）：在首个命中点再用 audd 复核
+  let tools = 'shazam';
+  if (auddEnabled && matched[0]) {
+    try {
+      const a = await runAudioId(path.join(tmp, `seg${Math.floor(matched[0].t)}.wav`), 'audd');
+      if (a.ok && a.title) {
+        const same = normalize(a.title) === normalize(matched[0].res.title!);
+        tools = same ? 'shazam+audd' : 'shazam(audd不一致)';
+      }
+    } catch {
+      /* audd 失败不阻塞 */
+    }
+  }
+
+  // 共识：所有命中标题必须一致（归一后），否则视为歧义跳过（保精确）
+  const normTitles = matched.map((m) => normalize(m.res.title!));
+  const allSame = normTitles.every((x) => x === normTitles[0]);
+  if (!allSame) {
+    console.log(`    ${seg.t}s：多采样结果不一致（${matched.map((m) => m.res.title).join(' / ')}），歧义跳过`);
+    return null;
+  }
+  const first = matched[0];
+  if (!isLikelySongTitle(first.res.title!)) {
+    console.log(`    ${seg.t}s：${first.res.title}（不像歌名，跳过）`);
+    return null;
+  }
+  return { title: first.res.title!, artist: first.res.artist || '', t: first.t, tools };
 }
 
 async function processBvid(bvid: string): Promise<number> {
@@ -164,20 +269,25 @@ async function processBvid(bvid: string): Promise<number> {
     console.log('    未定位到唱歌段落');
     return 0;
   }
-  console.log(`    定位到 ${segs.length} 个候选段落：${segs.map((s) => `${Math.floor(s.t / 60)}′${String(Math.floor(s.t % 60)).padStart(2, '0')}″(${s.score})`).join(' ')}`);
+  console.log(
+    `    定位到 ${segs.length} 个候选段落：${segs
+      .map((s) => `${Math.floor(s.t / 60)}′${String(Math.floor(s.t % 60)).padStart(2, '0')}″(${s.score})`)
+      .join(' ')}`,
+  );
   const cid = await getVideoCid(bvid);
   if (!cid) {
     console.log('    cid 获取失败，跳过');
     return 0;
   }
-  const url = await getVideoPlayUrl(bvid, cid);
-  if (!url) {
+  const getUrl = () => getVideoPlayUrl(bvid, cid);
+  if (!(await getUrl())) {
     console.log('    播放地址获取失败，跳过');
     return 0;
   }
-  // 已有歌曲（OCR+手动+ear），用于去重
+  // 已有歌曲（OCR+手动+ear），用于去重与交叉核对
   const exist = await p.query<{ title: string }>('SELECT title FROM live_song WHERE bvid = $1', [bvid]);
   const existing = new Set(exist.rows.map((r) => (r.title || '').normalize('NFKC').toLowerCase()));
+  const auddEnabled = !!process.env.AUDD_TOKEN;
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dousha-ear-'));
   let hits = 0;
@@ -188,54 +298,28 @@ async function processBvid(bvid: string): Promise<number> {
     );
     let nextIdx = Number(idxRow.rows[0].max) + 1;
     for (const seg of segs) {
-      // 多点探测：弹幕密集窗口不一定踩准唱歌时刻，t / +50s / +100s 各试一次，命中即停
-      let matched: { res: EarResult; t: number } | null = null;
-      for (const off of [0, 50, 100]) {
-        const t = seg.t + off;
-        if (t > duration - 30) break;
-        const wav = path.join(tmp, `seg${Math.floor(t)}.wav`);
-        try {
-          await runFfmpegExtract(url, t, wav);
-        } catch (e) {
-          console.log(`    ${t}s 音频抽取失败：${(e as Error).message}`);
-          continue;
-        }
-        let res: EarResult;
-        try {
-          res = await runAudioId(wav);
-        } catch (e) {
-          console.log(`    ${t}s 识别异常：${(e as Error).message}`);
-          continue;
-        }
-        if (res.ok && res.title) {
-          matched = { res, t };
-          break;
-        }
-        console.log(`    ${t}s：未识别（${res.error ?? 'no_match'}）`);
-      }
-      if (!matched || !matched.res.title) continue;
-      const { res, t } = matched;
-      const rtitle = res.title as string;
-      // 已有同名歌则跳过（大小写/全半角归一后比较）
-      const key = rtitle.normalize('NFKC').toLowerCase();
+      const rec = await recognizeSegment(getUrl, seg, duration, tmp, auddEnabled);
+      if (!rec) continue;
+      const key = rec.title.normalize('NFKC').toLowerCase();
       if (existing.has(key)) {
-        console.log(`    ${t}s：${rtitle}（已存在，跳过）`);
+        console.log(`    ${rec.t}s：${rec.title}（已存在，跳过）`);
         continue;
       }
       existing.add(key);
       // 若命中已知歌单，用标准歌名
-      const km = matchKnown(rtitle);
-      const title = km ? km.song.song : rtitle;
+      const km = matchKnown(rec.title);
+      const title = km ? km.song.song : rec.title;
+      const confirm = km ? ' ✓歌单' : '';
       await p.query(
         `INSERT INTO live_song (bvid, idx, title, raw_text, created_at, source)
          VALUES ($1,$2,$3,$4,$5,'ear')
          ON CONFLICT (bvid, idx) DO NOTHING`,
-        [bvid, nextIdx, title, `shazam@${t}s ${res.artist}`.trim(), Date.now()],
+        [bvid, nextIdx, title, `ear@${rec.t}s ${rec.artist} [${rec.tools}]`.trim(), Date.now()],
       );
       nextIdx++;
       hits++;
-      console.log(`    ${t}s：♪ ${title} — ${res.artist}`);
-      await sleep(800);
+      console.log(`    ${rec.t}s：♪ ${title} — ${rec.artist} (${rec.tools})${confirm}`);
+      await sleep(500);
     }
   } finally {
     try {
@@ -253,25 +337,39 @@ async function processBvid(bvid: string): Promise<number> {
   return hits;
 }
 
-async function main() {
+// 供 jobs.ts 调用的入口：处理若干场未跑过识曲的回放
+export async function runEarAll(limit: number): Promise<string> {
   await ensureReady();
   await ensureEarTable();
-  if (BVID) {
-    await processBvid(BVID);
-    process.exit(0);
-  }
-  // 自动挑选：近期有弹幕、已完成 OCR、且未跑过识曲的歌回场次
   const { rows } = await getPool().query<{ id: string }>(
     `SELECT s.id FROM live_session s
      LEFT JOIN song_ear_done d ON d.bvid = s.id
      WHERE d.bvid IS NULL AND s.duration_sec >= 120
      ORDER BY s.start_time DESC LIMIT $1`,
-    [LIMIT],
+    [limit],
   );
-  console.log(`待识曲场次：${rows.length}`);
-  for (const r of rows) {
-    await processBvid(r.id).catch((e) => console.warn(`    异常：${(e as Error).message}`));
+  let total = 0;
+  for (const r of rows) total += await processBvid(r.id).catch((e) => {
+    console.warn(`    异常：${(e as Error).message}`);
+    return 0;
+  });
+  return `听歌识曲完成：${rows.length} 场，新增 ${total} 首`;
+}
+
+export async function runEarBvid(bvid: string): Promise<number> {
+  await ensureReady();
+  await ensureEarTable();
+  return processBvid(bvid);
+}
+
+async function main() {
+  if (BVID) {
+    const n = await runEarBvid(BVID);
+    console.log(`识别 ${n} 首`);
+    process.exit(0);
   }
+  const msg = await runEarAll(LIMIT);
+  console.log(msg);
   process.exit(0);
 }
 

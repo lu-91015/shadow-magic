@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+import os, sys, paramiko
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+c = paramiko.SSHClient()
+c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+c.connect(os.environ["RH"], 22, os.environ["RU"], os.environ["RP"], timeout=120)
+local = os.path.join("tmp-ff", "ff.txz")
+print("uploading...")
+sftp = c.open_sftp()
+sftp.put(local, "/tmp/ff.txz")
+sftp.close()
+print("uploaded")
+def run(cmd, timeout=600):
+    i, o, e = c.exec_command(cmd, timeout=timeout)
+    out = o.read().decode("utf-8", "replace")
+    err = e.read().decode("utf-8", "replace")
+    print(">>", cmd[:70]); print(out.strip()[-800:]); print("ERR:", err.strip()[-300:])
+run("cd /tmp && tar xf ff.txz && D=$(ls -d ffmpeg-master*-linux64-gpl) && cp $D/bin/ffmpeg /usr/local/bin/ffmpeg && cp $D/bin/ffprobe /usr/local/bin/ffprobe && chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe && echo copied")
+run("ffmpeg -version 2>/dev/null | head -1")
+c.close()

@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   if (!(await requireAdmin(req)))
     return NextResponse.json({ ok: false }, { status: 401 });
   const { action } = await req.json().catch(() => ({}) as any);
-  if (!['live', 'songs', 'danmaku'].includes(action))
+  if (!['live', 'songs', 'danmaku', 'ear'].includes(action))
     return NextResponse.json({ ok: false, error: '未知 action' }, { status: 400 });
   const runId = await launchJob(action, {}, 'manual');
   await insertAudit('live_scan', action, undefined, getClientIp(req));
