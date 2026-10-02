@@ -39,7 +39,7 @@ import { pullCommentsForOid } from './comments';
 import { localizeDynImages } from './dynamics';
 import { scanBvid } from '../scripts/sync-songs';
 import { collectDanmakuForBvid } from '../scripts/sync-danmaku';
-import { runEarAll } from '../scripts/song-by-ear';
+import { runEarAll, runEarBvid } from '../scripts/song-by-ear';
 import { matchReplaySenders } from './match-senders';
 import { LIVE_SERIES_ID } from './constants';
 import { notifyFailure } from './notify';
@@ -60,7 +60,12 @@ export const JOB_TYPES: { type: string; label: string; needPayload: boolean }[] 
   { type: 'senders', label: '弹幕身份回填（哈希→昵称）', needPayload: false },
   {
     type: 'replaySync',
-    label: '直播回放自动同步（新回放+弹幕+身份回填）',
+    label: '直播回放自动同步（新回放+弹幕+身份回填+识曲）',
+    needPayload: false,
+  },
+  {
+    type: 'earNew',
+    label: '新回放自动补识曲（Shazam，按天限量去重）',
     needPayload: false,
   },
   { type: 'trackStats', label: '李豆沙数据追踪（粉丝/大航海）', needPayload: false },
@@ -85,6 +90,40 @@ async function syncLiveReplayList(log: JobLogger): Promise<number> {
   for (const s of sessions) if (s.liveId) await upsertLiveSession(s);
   log(`回放列表拉取：${sessions.length} 场`);
   return sessions.length;
+}
+
+// 新回放自动补识曲：识别近 N 天、从未 ear 过、已收弹幕、时长足够的回放。
+// 用 song_ear_done 去重，跨多次调度自动追赶；单轮限量避免自动链过长/触发风控。
+async function runEarNewReplays(
+  log: JobLogger,
+  runId: number | undefined,
+  cutoff: number,
+  limit: number,
+): Promise<{ ok: number; total: number }> {
+  const { rows } = await getPool().query<{ id: string }>(
+    `SELECT s.id FROM live_session s
+     LEFT JOIN song_ear_done d ON d.bvid = s.id
+     LEFT JOIN (SELECT bvid, COUNT(*) AS cnt FROM live_danmaku GROUP BY bvid) dm ON dm.bvid = s.id
+     WHERE s.start_time >= $1
+       AND d.bvid IS NULL
+       AND COALESCE(s.duration_sec,0) >= 120
+       AND COALESCE(dm.cnt,0) > 5
+     ORDER BY s.start_time DESC LIMIT $2`,
+    [cutoff, limit],
+  );
+  const days = Math.max(1, Math.round((Math.floor(Date.now() / 1000) - cutoff) / 86400));
+  log(`近 ${days} 天待听歌识曲：${rows.length} 场`);
+  let ok = 0;
+  for (const r of rows) {
+    if (isRunCancelled(runId)) {
+      log('已取消，停止听歌识曲');
+      break;
+    }
+    const hits = await runEarBvid(r.id).catch(() => 0);
+    if (hits > 0) ok++;
+    log(`听歌识曲 ${r.id}：${hits} 首`);
+  }
+  return { ok, total: rows.length };
 }
 
 // 取消标志：存到 globalThis，跨模块热更新保持同一份引用，
@@ -425,9 +464,24 @@ export async function runJob(
         log(`歌单识别 ${r.id}：${res.ok ? res.songs + ' 首' : '失败'}`);
         await sleep(500);
       }
-      const summary = `自动同步完成：回放列表 ${n} 场，补弹幕 ${ok}/${todo.length}（失败 ${failed}），身份回填 ${m.updated} 条，歌单识别 ${sungOk}/${songTodo.length}`;
+      // 听歌识曲（音频 Shazam）：新回放自动补识曲，接进本自动链
+      const ear = await runEarNewReplays(
+        log,
+        runId,
+        cutoff,
+        Number(payload?.earLimit ?? 5) || 5,
+      );
+      const summary = `自动同步完成：回放列表 ${n} 场，补弹幕 ${ok}/${todo.length}（失败 ${failed}），身份回填 ${m.updated} 条，歌单识别 ${sungOk}/${songTodo.length}，听歌识曲 ${ear.ok}/${ear.total}`;
       if (failed > 0) throw new Error(`${summary}；存在弹幕收集失败场次（B站风控时会自动重试）`);
       return summary;
+    }
+    case 'earNew': {
+      // 新回放自动补识曲（可单独调度）：近 N 天、从未 ear 过、已收弹幕、时长足够
+      const days = Number(payload?.days ?? 30) || 30;
+      const limit = Number(payload?.limit ?? 10) || 10;
+      const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
+      const r = await runEarNewReplays(log, runId, cutoff, limit);
+      return `新回放听歌识曲完成：${r.ok}/${r.total} 场`;
     }
     case 'songs': {
       if (payload?.bvid) {
