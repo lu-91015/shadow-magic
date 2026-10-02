@@ -1925,7 +1925,22 @@ function LivesTab() {
             </thead>
             <tbody>
               {paged.map((l) => (
-                <tr key={l.bvid} className="border-b border-white/5">
+                <tr
+                  key={l.bvid}
+                  className="border-b border-white/5 transition-colors hover:bg-white/5"
+                  title={[
+                    l.title,
+                    `BV号：${l.bvid}`,
+                    `开播：${new Date(l.startTime * 1000).toLocaleString('zh-CN', { hour12: false })}`,
+                    `时长：${Math.round(l.durationSec / 60)} 分钟`,
+                    `歌数：${l.songCount}`,
+                    `已识别：${l.checked ? '是' : '否'}`,
+                    `弹幕：${l.rtDanmaku != null ? nf(l.rtDanmaku) : l.dmCollected > 0 ? `已收集 ${l.dmCollected}` : '未收集'}`,
+                    l.songsOverride ? '歌单已人工核对（自动流程不再改写）' : null,
+                  ]
+                    .filter(Boolean)
+                    .join('\n')}
+                >
                   <td className="px-2 max-w-[36vw] truncate" title={l.bvid}>
                     <a
                       href={`https://www.bilibili.com/video/${l.bvid}`}
