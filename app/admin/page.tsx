@@ -2815,12 +2815,13 @@ const emptyMascot = {
   scene: 'idle',
 };
 
-// 小人台词的触发场景：idle/tap/enter/admin_* 为固定值，page:<路由> 需再选具体页面
+// 小人台词的触发场景：idle/tap/enter/admin_* 为固定值，page:<路由>/hover:<按钮> 需再选具体项
 const MASCOT_SCENES: [string, string][] = [
   ['idle', '闲置随机（含时间/日期条件）'],
   ['tap', '点击小人'],
   ['enter', '刚进入站点'],
   ['page', '进入某个页面…'],
+  ['hover', '悬停某个按钮…'],
   ['admin_guest', '游客模式进后台'],
   ['admin_admin', '管理员模式进后台'],
 ];
@@ -2840,12 +2841,26 @@ const MASCOT_PAGES: [string, string][] = [
   ['/danmaku', '弹幕'],
   ['/admin', '后台'],
 ];
+// 悬停按钮场景的具体目标：scene = hover:<target>
+const MASCOT_HOVER_TARGETS: [string, string][] = [
+  ['wardrobe', '熊猫衣柜'],
+  ['tracks', '熊猫活动轨迹'],
+  ['dynamics', '动态'],
+  ['playlist', '歌单'],
+  ['clips', '切片墙'],
+  ['live', '进入直播间'],
+];
 const sceneLabel = (s: string) => {
   const v = String(s || 'idle');
   if (v.startsWith('page:')) {
     const p = v.slice(5);
     const hit = MASCOT_PAGES.find(([path]) => path === p);
     return `进入 ${hit ? hit[1] : p}`;
+  }
+  if (v.startsWith('hover:')) {
+    const t = v.slice(6);
+    const hit = MASCOT_HOVER_TARGETS.find(([id]) => id === t);
+    return `悬停 ${hit ? hit[1] : t}`;
   }
   return MASCOT_SCENES.find(([k]) => k === v)?.[1] ?? v;
 };
@@ -2922,11 +2937,12 @@ function MascotTab() {
     return parts.join(' · ');
   };
 
-  // 触发场景选择：先选类型，选「进入某个页面」时再选具体路由
+  // 触发场景选择：先选类型，选「进入某个页面 / 悬停某个按钮」时再选具体项
   const sceneInputs = (obj: any, set: (v: any) => void) => {
     const v = String(obj.scene || 'idle');
-    const kind = v.startsWith('page:') ? 'page' : v;
+    const kind = v.startsWith('page:') ? 'page' : v.startsWith('hover:') ? 'hover' : v;
     const route = v.startsWith('page:') ? v.slice(5) : '/';
+    const target = v.startsWith('hover:') ? v.slice(6) : 'wardrobe';
     return (
       <>
         <select
@@ -2934,7 +2950,9 @@ function MascotTab() {
           value={kind}
           onChange={(e) => {
             const k = e.target.value;
-            set({ ...obj, scene: k === 'page' ? `page:${route}` : k });
+            if (k === 'page') set({ ...obj, scene: `page:${route}` });
+            else if (k === 'hover') set({ ...obj, scene: `hover:${target}` });
+            else set({ ...obj, scene: k });
           }}
           className="rounded-lg border border-white/15 bg-black/40 px-2 py-1.5 text-sm text-white"
         >
@@ -2953,6 +2971,19 @@ function MascotTab() {
             {MASCOT_PAGES.map(([p, label]) => (
               <option key={p} value={p}>
                 {label}（{p}）
+              </option>
+            ))}
+          </select>
+        )}
+        {kind === 'hover' && (
+          <select
+            value={target}
+            onChange={(e) => set({ ...obj, scene: `hover:${e.target.value}` })}
+            className="rounded-lg border border-white/15 bg-black/40 px-2 py-1.5 text-sm text-white"
+          >
+            {MASCOT_HOVER_TARGETS.map(([id, label]) => (
+              <option key={id} value={id}>
+                {label}
               </option>
             ))}
           </select>

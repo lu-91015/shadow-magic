@@ -15,9 +15,11 @@ data/*
 !data/known-songs.json
 logs/
 public/dynamics/
+public/replays/
 public/characters/*
 !public/characters/.gitkeep
 tools/ffmpeg/
+tmp-dev.out
 
 # logs / stderr / temp files
 *.log

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import TopicWall from '@/components/TopicWall';
 import GarbBackdrop from '@/components/GarbBackdrop';
+import HoverSayLink from '@/components/HoverSayLink';
 import { LIVE_URL, SPACE_URL } from '@/lib/constants';
 import ScreenNav from '@/components/ScreenNav';
 import CornerDock from '@/components/CornerDock';
@@ -167,12 +168,13 @@ async function HomeScreens() {
             >
               🔴 进入直播间
             </a>
-            <Link
+            <HoverSayLink
               href="/wardrobe"
               className="rounded-full border border-white/15 bg-white/10 px-6 py-3 text-base text-white/85 backdrop-blur-md transition hover:bg-white/20"
+              scene="hover:wardrobe"
             >
               🧩 熊猫衣柜
-            </Link>
+            </HoverSayLink>
             <Link
               href="/tracks"
               className="rounded-full border border-white/15 bg-white/10 px-6 py-3 text-base text-white/85 backdrop-blur-md transition hover:bg-white/20"
