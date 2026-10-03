@@ -25,6 +25,17 @@ const nextConfig = {
       { protocol: 'https', hostname: '*.hdslb.com' },
     ],
   },
+  // 3D 模型与贴图体积较大，缓存一年（immutable）。后续若替换模型，请改文件名以突破缓存。
+  async headers() {
+    return [
+      {
+        source: '/models/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

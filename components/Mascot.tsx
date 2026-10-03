@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 
-// 左下角豆沙小人：3D 形象（three.js）。优先加载 VRM（/models/lidousha.vrm），
-// 缺失时自动回退到原始 PMX（/models/lidousha.pmx），无需任何转换即可运行。
+// 左下角豆沙小人：3D 形象（three.js，加载 PMX 模型 /models/lidousha.pmx）。
 // 熊猫耳挂在头部骨骼上，随转头/摆动完美贴合；鼠标移动驱动头部朝向；点击触发弹跳+发言。
 interface Line {
   id: number;
@@ -17,7 +16,6 @@ interface Line {
   scene: string;
 }
 
-const VRM_URL = '/models/lidousha.vrm';
 const PMX_URL = '/models/lidousha.pmx';
 
 function cstNow(): { hhmm: string; mmdd: string } {
@@ -115,7 +113,7 @@ export default function Mascot() {
     let raf = 0;
     let removeClickListener: () => void = () => {};
     (async () => {
-      await load();
+      load(); // 台词与 3D 并行拉取，互不阻塞
       if (!canvasHost.current) return;
       try {
         const THREE: any = await import('three');
@@ -166,43 +164,28 @@ export default function Mascot() {
         dir2.position.set(-2, 1, 1);
         scene.add(dir2);
 
-        // 优先 VRM，回退 PMX
+        // 直接加载 PMX（VRM 文件当前未提供，避免无谓的 404 试探）
         let modelRoot: any = null;
         let head: any = null;
         let isVRM = false;
         let vrmObj: any = null;
         let mmdBones: any[] = [];
         try {
-          const { GLTFLoader }: any = await import('three/examples/jsm/loaders/GLTFLoader.js');
-          const { VRMLoaderPlugin }: any = await import('@pixiv/three-vrm');
-          const gl = new GLTFLoader();
-          gl.register((p: any) => new VRMLoaderPlugin(p));
-          const gltf: any = await gl.loadAsync(VRM_URL);
-          vrmObj = gltf.userData.vrm;
+          const { MMDLoader }: any = await import('three/examples/jsm/loaders/MMDLoader.js');
+          const mmd = new MMDLoader();
+          modelRoot = await mmd.loadAsync(PMX_URL);
           if (disposed) return;
-          modelRoot = vrmObj.scene;
-          isVRM = true;
           scene.add(modelRoot);
-          head = vrmObj.humanoid?.getNormalizedBoneNode('head') ?? null;
-        } catch (vrmErr) {
-          console.warn('[Mascot] VRM 不可用，回退 PMX：', vrmErr);
-          try {
-            const { MMDLoader }: any = await import('three/examples/jsm/loaders/MMDLoader.js');
-            const mmd = new MMDLoader();
-            modelRoot = await mmd.loadAsync(PMX_URL);
-            if (disposed) return;
-            scene.add(modelRoot);
-            let skinned: any = null;
-            modelRoot.traverse((o: any) => {
-              if (o.isSkinnedMesh && !skinned) skinned = o;
-            });
-            mmdBones = skinned ? skinned.skeleton.bones : [];
-            head = mmdBones.find((b: any) => /頭|head/i.test(b.name)) ?? null;
-          } catch (pmxErr) {
-            console.warn('[Mascot] PMX 加载失败：', pmxErr);
-            setModelOk(false);
-            return;
-          }
+          let skinned: any = null;
+          modelRoot.traverse((o: any) => {
+            if (o.isSkinnedMesh && !skinned) skinned = o;
+          });
+          mmdBones = skinned ? skinned.skeleton.bones : [];
+          head = mmdBones.find((b: any) => /頭|head/i.test(b.name)) ?? null;
+        } catch (pmxErr) {
+          console.warn('[Mascot] PMX 加载失败：', pmxErr);
+          setModelOk(false);
+          return;
         }
         if (disposed) return;
 

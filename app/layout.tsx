@@ -16,6 +16,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN">
+      <head>
+        {/* 提前下载 3D 模型，避免等 JS  hydrate 完成才开始拉取 */}
+        <link rel="preload" as="fetch" href="/models/lidousha.pmx" />
+      </head>
       <body>
         <SiteNav />
         <div className="pt-12">{children}</div>
