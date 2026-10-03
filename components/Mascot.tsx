@@ -513,23 +513,34 @@ function EmoteText({ text }: { text: string }) {
         p.t === 'text' ? (
           <span key={i}>{p.v}</span>
         ) : (
-          <EmoteImg key={i} name={p.v.includes('_') ? p.v.slice(p.v.lastIndexOf('_') + 1) : p.v} token={p.v} />
+          <EmoteImg key={i} token={p.v} />
         ),
       )}
     </>
   );
 }
 
-function EmoteImg({ name, token }: { name: string; token: string }) {
+function EmoteImg({ token }: { token: string }) {
+  // 解析顺序：B站表情（按全名存于 /emojis/）→ 装扮表情（取最后一个 _ 之后的名字，存于 /garb/emojis/）→ 原文
+  const suffix = token.includes('_') ? token.slice(token.lastIndexOf('_') + 1) : token;
+  const candidates = [
+    `/garb/emojis/${encodeURIComponent(suffix)}.png`,
+    `/emojis/${encodeURIComponent(token)}.png`,
+    `/garb/emojis/${encodeURIComponent(token)}.png`,
+  ];
+  const [idx, setIdx] = useState(0);
   const [failed, setFailed] = useState(false);
   if (failed) return <span>{`[${token}]`}</span>;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={`/garb/emojis/${encodeURIComponent(name)}.png`}
+      src={candidates[idx]}
       alt={token}
       title={token}
-      onError={() => setFailed(true)}
+      onError={() => {
+        if (idx < candidates.length - 1) setIdx(idx + 1);
+        else setFailed(true);
+      }}
       className="mx-0.5 inline-block h-7 w-7 align-text-bottom"
       draggable={false}
     />
