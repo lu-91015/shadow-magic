@@ -464,6 +464,10 @@ export function ensureReady(): Promise<void> {
         enabled BOOLEAN DEFAULT true,
         created_at BIGINT
       )`);
+      // 触发场景：idle=闲置随机 / tap=点击小人 / enter=进入站点 /
+      // admin_guest|admin_admin=进入后台（游客|管理员） / page:<路由>=进入某页面
+      await p.query(`ALTER TABLE mascot_line ADD COLUMN IF NOT EXISTS scene TEXT`);
+      await p.query(`UPDATE mascot_line SET scene = 'idle' WHERE scene IS NULL`);
       // 素材库：图片（立绘/装扮/表情包）与非图片素材（鼠标指针/输入法皮肤等）
       await p.query(`CREATE TABLE IF NOT EXISTS asset (
         id SERIAL PRIMARY KEY,
@@ -951,13 +955,15 @@ export interface MascotLineRow {
   dates: string | null;
   /** 仅直播中生效 */
   only_live: boolean;
+  /** 触发场景：idle / tap / enter / admin_guest / admin_admin / page:<路由> */
+  scene: string | null;
   enabled: boolean;
 }
 
 export async function queryMascotLines(): Promise<MascotLineRow[]> {
   await ensureReady();
   const { rows } = await getPool().query<MascotLineRow>(
-    'SELECT id, text, weight, time_start, time_end, dates, only_live, enabled FROM mascot_line ORDER BY id DESC',
+    'SELECT id, text, weight, time_start, time_end, dates, only_live, scene, enabled FROM mascot_line ORDER BY id DESC',
   );
   return rows;
 }
@@ -969,12 +975,22 @@ export async function insertMascotLine(w: {
   time_end?: string | null;
   dates?: string | null;
   only_live?: boolean;
+  scene?: string | null;
 }): Promise<number> {
   await ensureReady();
   const { rows } = await getPool().query<{ id: number }>(
-    `INSERT INTO mascot_line (text, weight, time_start, time_end, dates, only_live, enabled, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,true,$7) RETURNING id`,
-    [w.text, w.weight ?? 1, w.time_start ?? null, w.time_end ?? null, w.dates ?? null, w.only_live ?? false, Date.now()],
+    `INSERT INTO mascot_line (text, weight, time_start, time_end, dates, only_live, scene, enabled, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,true,$8) RETURNING id`,
+    [
+      w.text,
+      w.weight ?? 1,
+      w.time_start ?? null,
+      w.time_end ?? null,
+      w.dates ?? null,
+      w.only_live ?? false,
+      w.scene ?? 'idle',
+      Date.now(),
+    ],
   );
   return rows[0].id;
 }
@@ -988,6 +1004,7 @@ export async function updateMascotLine(
     time_end?: string | null;
     dates?: string | null;
     only_live?: boolean;
+    scene?: string | null;
     enabled?: boolean;
   },
 ): Promise<void> {

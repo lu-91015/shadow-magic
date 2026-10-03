@@ -88,3 +88,43 @@ body {
 .mascot-pop {
   animation: mascot-pop 0.42s ease-out;
 }
+
+/* 豆沙小人对话气泡：白蓝渐变 + 左下小尾巴 + 弹入动画 */
+@keyframes mascot-bubble-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.88);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.mascot-bubble {
+  position: relative;
+  border-radius: 1rem;
+  background: linear-gradient(160deg, #ffffff 0%, #f2f7ff 100%);
+  border: 1px solid rgba(96, 138, 214, 0.38);
+  box-shadow:
+    0 10px 24px -10px rgba(15, 23, 42, 0.45),
+    0 0 0 3px rgba(255, 255, 255, 0.55);
+  transform-origin: 22% 100%;
+  animation: mascot-bubble-in 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.mascot-bubble::after {
+  content: '';
+  position: absolute;
+  left: 20px;
+  bottom: -7px;
+  width: 13px;
+  height: 13px;
+  background: linear-gradient(160deg, #ffffff 0%, #f2f7ff 100%);
+  border-right: 1px solid rgba(96, 138, 214, 0.38);
+  border-bottom: 1px solid rgba(96, 138, 214, 0.38);
+  border-bottom-right-radius: 3px;
+  transform: rotate(45deg);
+}

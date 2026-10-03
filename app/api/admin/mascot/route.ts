@@ -12,6 +12,14 @@ export const dynamic = 'force-dynamic';
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MMD = /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+// 触发场景：固定几种 + page:<路由>（路由只允许字母数字 - _ / [ ]）
+const SCENE = /^(idle|tap|enter|admin_guest|admin_admin|page:\/?[a-z0-9\-_[\]/]*)$/;
+
+function normScene(v: unknown, fallback: string | null = null): string | null {
+  const s = String(v ?? '').trim() || fallback;
+  if (!s) return null;
+  return SCENE.test(s) ? s : null;
+}
 
 // 校验并规范化时间/日期条件
 function normCond(body: any) {
@@ -53,7 +61,10 @@ export async function POST(req: NextRequest) {
   const cond = normCond(body);
   if ('error' in cond)
     return NextResponse.json({ ok: false, error: cond.error }, { status: 400 });
-  const id = await insertMascotLine({ text, ...cond });
+  const scene = normScene(body?.scene, 'idle');
+  if (!scene)
+    return NextResponse.json({ ok: false, error: '触发场景不合法' }, { status: 400 });
+  const id = await insertMascotLine({ text, ...cond, scene });
   await insertAudit('mascot_add', String(id), { text, ...cond }, getClientIp(req));
   return NextResponse.json({ ok: true, id });
 }
@@ -93,6 +104,12 @@ export async function PUT(req: NextRequest) {
     patch.dates = cond.dates;
     patch.only_live = cond.onlyLive;
     if (body.weight != null) patch.weight = cond.weight;
+  }
+  if (body.scene !== undefined) {
+    const scene = normScene(body.scene);
+    if (!scene)
+      return NextResponse.json({ ok: false, error: '触发场景不合法' }, { status: 400 });
+    patch.scene = scene;
   }
   if (body.enabled !== undefined) patch.enabled = !!body.enabled;
   await updateMascotLine(id, patch);

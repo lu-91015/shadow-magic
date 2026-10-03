@@ -1,9 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 
 // 左下角豆沙小人：只渲染 Live2D 模型（无立牌兜底）。
 // Live2D：模型原生支持视线/头部跟随鼠标（model.focus），点击触发随机动作。
+// 台词按「触发场景」分组：idle 闲置 / tap 点击 / enter 进入站点 /
+// admin_guest 游客进后台 / admin_admin 管理员进后台 / page:<路由> 进入某页面。
 interface Line {
   id: number;
   text: string;
@@ -12,6 +15,7 @@ interface Line {
   timeEnd: string | null;
   dates: string | null;
   onlyLive: boolean;
+  scene: string;
 }
 
 // Cubism 4 运行时核心（Cubism SDK 官方 CDN），Live2D 模型加载前需要它
@@ -75,6 +79,13 @@ export default function Mascot() {
   const [modelOk, setModelOk] = useState(false);
   const linesRef = useRef<Line[]>([]);
   const liveRef = useRef(0);
+  const pathname = usePathname();
+  const firstRouteRef = useRef(true);
+  const enterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const linesLoadedRef = useRef(false);
+  const pendingRouteRef = useRef<string | null>(null);
+  const pathRef = useRef<string | null>(null);
+  const handleRouteSpeechRef = useRef<((path: string, isFirst: boolean) => void) | null>(null);
 
   // 拉取台词、直播状态与模型配置
   const load = useCallback(async () => {
@@ -83,6 +94,17 @@ export default function Mascot() {
       const j = await r.json();
       linesRef.current = j.lines ?? [];
       liveRef.current = j.liveStatus ?? 0;
+      // 台词到位后，补触发进场/首个路由的开场白
+      if (!linesLoadedRef.current) {
+        linesLoadedRef.current = true;
+        const p = pendingRouteRef.current;
+        if (p != null) {
+          pendingRouteRef.current = null;
+          const isFirst = firstRouteRef.current;
+          firstRouteRef.current = false;
+          handleRouteSpeechRef.current?.(p, isFirst);
+        }
+      }
       return (j.model ?? { url: '', scale: 1 }) as { url: string; scale: number };
     } catch {
       return { url: '', scale: 1 };
@@ -213,23 +235,93 @@ export default function Mascot() {
     return () => window.removeEventListener('mousemove', onMove);
   }, []);
 
-  const say = useCallback((text?: string) => {
-    const { hhmm, mmdd } = cstNow();
-    let pool = linesRef.current;
-    if (text == null) {
-      pool = pool.filter(
-        (l) =>
-          inTimeWindow(hhmm, l.timeStart, l.timeEnd) &&
-          (!l.dates || l.dates.split(',').includes(mmdd)) &&
-          (!l.onlyLive || liveRef.current === 1),
-      );
-    }
-    const line = text ?? pickWeighted(pool)?.text;
-    if (!line) return;
-    setBubble(line);
+  // 显示一句话，5.2 秒后自动收起
+  const speak = useCallback((text: string | null) => {
+    if (!text) return false;
+    setBubble(text);
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => setBubble(null), 5000);
+    hideTimer.current = setTimeout(() => setBubble(null), 5200);
+    return true;
   }, []);
+
+  // 按场景取一句台词（仍受时间/日期/仅直播中条件约束）
+  const pickScene = useCallback((scene: string): string | null => {
+    const { hhmm, mmdd } = cstNow();
+    const pool = linesRef.current.filter(
+      (l) =>
+        (l.scene || 'idle') === scene &&
+        inTimeWindow(hhmm, l.timeStart, l.timeEnd) &&
+        (!l.dates || l.dates.split(',').includes(mmdd)) &&
+        (!l.onlyLive || liveRef.current === 1),
+    );
+    return pickWeighted(pool)?.text ?? null;
+  }, []);
+
+  // 依次尝试多个场景，取第一个有台词的（兜底退化）
+  const sayScene = useCallback(
+    (scenes: string[]) => {
+      for (const sc of scenes) {
+        if (speak(pickScene(sc))) return true;
+      }
+      return false;
+    },
+    [pickScene, speak],
+  );
+
+  // 台词加载完成后的首个路由，等 load() 结束再触发开场白（避免竞态）
+  const handleRouteSpeech = useCallback(
+    (path: string, isFirst: boolean) => {
+      pathRef.current = path;
+      const pageScene = `page:${path}`;
+      const speakForPage = () => {
+        if (pathRef.current !== path) return; // 路由已变，丢弃过期发言
+        if (path === '/admin') {
+          // 后台：按登录身份说不同的话（未登录则退回页面台词）
+          fetch('/api/admin/me', { cache: 'no-store' })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((j) => {
+              if (pathRef.current !== path) return;
+              const role = j?.role;
+              if (role === 'guest') sayScene(['admin_guest', pageScene]);
+              else if (role === 'admin') sayScene(['admin_admin', pageScene]);
+              else sayScene([pageScene]);
+            })
+            .catch(() => {
+              if (pathRef.current === path) sayScene([pageScene]);
+            });
+          return;
+        }
+        sayScene([pageScene]);
+      };
+
+      if (isFirst) {
+        // 首次进入站点：先打招呼；若直达子页面，稍后再补一句页面台词
+        const greeted = sayScene(['enter']);
+        if (path !== '/') {
+          enterTimerRef.current = setTimeout(speakForPage, greeted ? 5600 : 900);
+        }
+      } else {
+        speakForPage();
+      }
+    },
+    [sayScene],
+  );
+  useEffect(() => {
+    handleRouteSpeechRef.current = handleRouteSpeech;
+  }, [handleRouteSpeech]);
+
+  // 路由变化 → 场景台词
+  useEffect(() => {
+    if (!pathname) return;
+    if (!linesLoadedRef.current) {
+      // 台词尚未拉取完成，交给 load() 完成后触发
+      pendingRouteRef.current = pathname;
+      return;
+    }
+    const isFirst = firstRouteRef.current;
+    firstRouteRef.current = false;
+    handleRouteSpeech(pathname, isFirst);
+  }, [pathname, handleRouteSpeech]);
 
   // 点击：Live2D 随机动作 + 发言
   const onTap = useCallback(() => {
@@ -243,26 +335,26 @@ export default function Mascot() {
         }
       }
     }
-    say();
-  }, [say]);
+    sayScene(['tap', 'idle']);
+  }, [sayScene]);
 
   // 闲置时偶尔开口
   useEffect(() => {
     let t: ReturnType<typeof setTimeout>;
     const loop = () => {
       t = setTimeout(() => {
-        say();
+        sayScene(['idle']);
         loop();
       }, 45000 + Math.random() * 45000);
     };
     loop();
     return () => clearTimeout(t);
-  }, [say]);
+  }, [sayScene]);
 
   return (
     <div className="fixed bottom-3 left-3 z-40 flex select-none flex-col items-center">
       {bubble && (
-        <div className="mb-2 max-w-56 rounded-2xl rounded-bl-sm border border-white/25 bg-white/90 px-3.5 py-2 text-sm leading-relaxed text-stone-700 shadow-xl backdrop-blur">
+        <div className="mascot-bubble mb-3 max-w-[14rem] px-3.5 py-2 text-[13px] font-medium leading-relaxed text-stone-700">
           {bubble}
         </div>
       )}

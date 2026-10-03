@@ -2812,6 +2812,42 @@ const emptyMascot = {
   timeEnd: '',
   dates: '',
   onlyLive: false,
+  scene: 'idle',
+};
+
+// 小人台词的触发场景：idle/tap/enter/admin_* 为固定值，page:<路由> 需再选具体页面
+const MASCOT_SCENES: [string, string][] = [
+  ['idle', '闲置随机（含时间/日期条件）'],
+  ['tap', '点击小人'],
+  ['enter', '刚进入站点'],
+  ['page', '进入某个页面…'],
+  ['admin_guest', '游客模式进后台'],
+  ['admin_admin', '管理员模式进后台'],
+];
+const MASCOT_PAGES: [string, string][] = [
+  ['/', '首页'],
+  ['/dynamics', '动态'],
+  ['/clips', '切片墙'],
+  ['/songs', '歌回歌单'],
+  ['/playlist', '歌单'],
+  ['/wardrobe', '熊猫衣柜'],
+  ['/tracks', '熊猫活动轨迹'],
+  ['/shop', '商店'],
+  ['/assets', '素材库'],
+  ['/news', '通知'],
+  ['/stats', '数据总览'],
+  ['/comments', '评论'],
+  ['/danmaku', '弹幕'],
+  ['/admin', '后台'],
+];
+const sceneLabel = (s: string) => {
+  const v = String(s || 'idle');
+  if (v.startsWith('page:')) {
+    const p = v.slice(5);
+    const hit = MASCOT_PAGES.find(([path]) => path === p);
+    return `进入 ${hit ? hit[1] : p}`;
+  }
+  return MASCOT_SCENES.find(([k]) => k === v)?.[1] ?? v;
 };
 
 function MascotTab() {
@@ -2886,6 +2922,45 @@ function MascotTab() {
     return parts.join(' · ');
   };
 
+  // 触发场景选择：先选类型，选「进入某个页面」时再选具体路由
+  const sceneInputs = (obj: any, set: (v: any) => void) => {
+    const v = String(obj.scene || 'idle');
+    const kind = v.startsWith('page:') ? 'page' : v;
+    const route = v.startsWith('page:') ? v.slice(5) : '/';
+    return (
+      <>
+        <select
+          title="触发场景"
+          value={kind}
+          onChange={(e) => {
+            const k = e.target.value;
+            set({ ...obj, scene: k === 'page' ? `page:${route}` : k });
+          }}
+          className="rounded-lg border border-white/15 bg-black/40 px-2 py-1.5 text-sm text-white"
+        >
+          {MASCOT_SCENES.map(([k, label]) => (
+            <option key={k} value={k}>
+              {label}
+            </option>
+          ))}
+        </select>
+        {kind === 'page' && (
+          <select
+            value={route}
+            onChange={(e) => set({ ...obj, scene: `page:${e.target.value}` })}
+            className="rounded-lg border border-white/15 bg-black/40 px-2 py-1.5 text-sm text-white"
+          >
+            {MASCOT_PAGES.map(([p, label]) => (
+              <option key={p} value={p}>
+                {label}（{p}）
+              </option>
+            ))}
+          </select>
+        )}
+      </>
+    );
+  };
+
   const timeInputs = (obj: any, set: (v: any) => void) => (
     <>
       <input
@@ -2954,6 +3029,7 @@ function MascotTab() {
               onChange={(e) => setForm({ ...form, weight: Number(e.target.value) })}
               className="w-20 rounded-lg border border-white/15 bg-black/40 px-2 py-2 text-sm text-white"
             />
+            {sceneInputs(form, setForm)}
             {timeInputs(form, setForm)}
             <label className="flex items-center gap-1.5 text-sm text-white/70">
               <input
@@ -2978,7 +3054,9 @@ function MascotTab() {
           </div>
         </div>
         <p className="mt-2 text-xs text-white/40">
-          示例：「中午好呀」设 11:00~14:00 → 只在中午说；「生日快乐！」设日期 05-20；「来听歌呀」勾选仅直播中。
+          <b className="text-white/60">触发场景</b>：决定这句话什么时候说——刚进站点 / 点击小人 / 进入某个页面 /
+          游客或管理员进后台；选「闲置随机」则只按时间、日期、是否直播中这些条件随机出现。
+          示例：「你好，我是李豆沙~」选「刚进入站点」；「这是我的衣柜哦~」选「进入某个页面 → 熊猫衣柜」。
           时间支持跨零点（如 22:00~05:00）。
         </p>
       </Sec>
@@ -3004,6 +3082,7 @@ function MascotTab() {
                       onChange={(e) => setEditing({ ...editing, weight: Number(e.target.value) })}
                       className="w-20 rounded-lg border border-white/15 bg-black/40 px-2 py-1.5 text-sm text-white"
                     />
+                    {sceneInputs(editing, setEditing)}
                     {timeInputs(editing, setEditing)}
                     <input
                       placeholder="MM-DD,MM-DD"
@@ -3032,6 +3111,9 @@ function MascotTab() {
                   <span className={`min-w-0 flex-1 break-words text-sm ${l.enabled ? 'text-white/90' : 'text-white/35 line-through'}`}>
                     「{l.text}」
                   </span>
+                  <span className="rounded-full bg-sky-900/50 px-2 py-0.5 text-xs text-sky-200">
+                    {sceneLabel(l.scene)}
+                  </span>
                   <span className="text-xs text-white/40">{condText(l)}</span>
                   <button
                     onClick={() => toggle(l.id, !l.enabled)}
@@ -3048,6 +3130,7 @@ function MascotTab() {
                         timeStart: l.time_start || '',
                         timeEnd: l.time_end || '',
                         dates: l.dates || '',
+                        scene: l.scene || 'idle',
                       })
                     }
                     className="text-xs text-sky-300 hover:underline"

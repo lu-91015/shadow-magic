@@ -43,6 +43,7 @@ export async function GET() {
           timeEnd: l.time_end,
           dates: l.dates,
           onlyLive: l.only_live,
+          scene: l.scene || 'idle',
         })),
       liveStatus: live.liveStatus ?? 0,
       model,
