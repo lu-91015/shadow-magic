@@ -34,3 +34,8 @@ chi_sim.traineddata
 
 # agent / ide data
 .codebuddy/
+
+# large binaries / build artifacts (never commit)
+public.zip
+tmp-ff/
+*.txz
