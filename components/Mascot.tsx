@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { createToonPipeline, type ToonPipeline } from '@/lib/toon/pipeline';
 
 // 左下角豆沙小人：3D 形象（three.js，加载 PMX 模型 /models/lidousha.pmx）。
+// 渲染走二次元卡通管线（lib/toon，参考米哈游 NPR 思路）；URL 加 ?mascot=classic 可切回旧的 MMD 默认渲染对比。
 // 熊猫耳挂在头部骨骼上，随转头/摆动完美贴合；鼠标移动驱动头部朝向；点击触发弹跳+发言。
 interface Line {
   id: number;
@@ -112,6 +114,7 @@ export default function Mascot() {
     let disposed = false;
     let raf = 0;
     let removeClickListener: () => void = () => {};
+    let toon: ToonPipeline | null = null;
     (async () => {
       load(); // 台词与 3D 并行拉取，互不阻塞
       if (!canvasHost.current) return;
@@ -156,13 +159,17 @@ export default function Mascot() {
         const camera = new THREE.PerspectiveCamera(30, W / H, 0.1, 100);
         camera.position.set(0, 0.95, 3.4);
         camera.lookAt(0, 0.85, 0);
-        scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.3));
-        const dir = new THREE.DirectionalLight(0xffffff, 1.1);
-        dir.position.set(1, 2, 2);
-        scene.add(dir);
-        const dir2 = new THREE.DirectionalLight(0xffffff, 0.5);
-        dir2.position.set(-2, 1, 1);
-        scene.add(dir2);
+        const classic = new URLSearchParams(window.location.search).get('mascot') === 'classic';
+        if (classic) {
+          // 旧版：MMD 默认材质 + 半球光/平行光（偏写实，仅留作对比）
+          scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.3));
+          const dir = new THREE.DirectionalLight(0xffffff, 1.1);
+          dir.position.set(1, 2, 2);
+          scene.add(dir);
+          const dir2 = new THREE.DirectionalLight(0xffffff, 0.5);
+          dir2.position.set(-2, 1, 1);
+          scene.add(dir2);
+        }
 
         // 直接加载 PMX（VRM 文件当前未提供，避免无谓的 404 试探）
         let modelRoot: any = null;
@@ -220,6 +227,11 @@ export default function Mascot() {
         const rootBaseZ = -((box.min.z + box.max.z) / 2);
         modelRoot.position.set(rootBaseX, rootBaseY, rootBaseZ);
 
+        // 卡通管线：替换材质 + 描边 + 深度边缘光（不依赖场景灯光）
+        if (!classic) {
+          toon = createToonPipeline(THREE, renderer, scene, camera, modelRoot, { head });
+        }
+
         threeRef.current = {
           THREE, renderer, scene, camera, modelRoot, head,
           armL, armR, elbowL, elbowR, isVRM, vrm: vrmObj, ns,
@@ -267,7 +279,8 @@ export default function Mascot() {
           }
           modelRoot.updateMatrixWorld(true);
           if (isVRM && vrmObj && vrmObj.update) vrmObj.update(dt);
-          renderer.render(scene, camera);
+          if (toon) toon.render();
+          else renderer.render(scene, camera);
         };
         animate();
       } catch (err) {
@@ -279,6 +292,7 @@ export default function Mascot() {
       disposed = true;
       cancelAnimationFrame(raf);
       removeClickListener();
+      toon?.dispose();
       const r = rendererRef.current;
       if (r) {
         try {
