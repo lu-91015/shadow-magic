@@ -74,7 +74,9 @@ def main():
     print(run(f"cd {REMOTE_DIR} && git checkout -f -B main FETCH_HEAD 2>&1 | tail -6"))
 
     if not no_build:
-        print(run(f"cd {REMOTE_DIR} && rm -f /tmp/deploy.bundle; npm install --omit=dev 2>&1 | tail -8"))
+        # 完整安装：next build 处理 globals.css 需要 tailwind/postcss/autoprefixer（devDependencies），
+        # 若用 --omit=dev 会被 npm 剪掉，导致生产构建失败。
+        print(run(f"cd {REMOTE_DIR} && rm -f /tmp/deploy.bundle; npm install 2>&1 | tail -8"))
         print(run(f"cd {REMOTE_DIR} && npm run build 2>&1 | tail -20"))
         print(run(f"cd {REMOTE_DIR} && pm2 restart lidousha-web lidousha-monitor 2>&1"))
     else:
