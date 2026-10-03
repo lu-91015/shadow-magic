@@ -210,6 +210,32 @@ function recolorT0(data, width, height, ch) {
   console.log(`  t0: hair ${hair} px, bow ${bow} px`);
 }
 
+// 袜口蓝色饰带：逐列检测皮肤→白袜过渡线，沿边画 16px 蓝带
+function paintSockBands(data, width, height, ch) {
+  let n = 0;
+  for (let x = 845; x < 1300; x++) {
+    let bound = -1;
+    for (let y = 750; y < 1250; y++) {
+      const o = (y * width + x) * ch;
+      if (ch === 4 && data[o + 3] < 8) continue;
+      const [h, s, v] = rgb2hsv(data[o], data[o + 1], data[o + 2]);
+      if (h >= 190 && h <= 265 && s < 0.22 && v > 0.72) { bound = y; break; }
+    }
+    if (bound < 0) continue;
+    for (let y = bound; y < Math.min(bound + 16, 1260); y++) {
+      const o = (y * width + x) * ch;
+      if (ch === 4 && data[o + 3] < 8) continue;
+      const [h2, , v2] = rgb2hsv(data[o], data[o + 1], data[o + 2]);
+      if (!(h2 >= 190 && h2 <= 265 && v2 > 0.6)) continue;
+      data[o] = Math.round(data[o] * 0.25 + 96 * 0.75);
+      data[o + 1] = Math.round(data[o + 1] * 0.25 + 128 * 0.75);
+      data[o + 2] = Math.round(data[o + 2] * 0.25 + 202 * 0.75);
+      n++;
+    }
+  }
+  console.log(`  t1 decorate: sock bands ${n} px`);
+}
+
 // 裙摆星星图案 + 胸口蝴蝶结白色结心（对齐偶像服立绘；星星为五角星）
 function decorateT1(data, width, height, ch) {
   // 裙子 bbox（atlas 像素）
@@ -252,6 +278,163 @@ function decorateT1(data, width, height, ch) {
     }
   }
   console.log(`  t1 decorate: bow knot ${knot} px`);
+}
+
+// ---------- texture_00 精修：刘海补染 + 发梢蓝渐变 + 缎带星星 ----------
+function refineT0(data, width, height, ch) {
+  let bangs = 0, tip = 0;
+  // 发梢渐变区：[x0,x1,y0,y1,最大混合强度]（双马尾两束 + 后发下摆）
+  const tipZones = [
+    [580, 1240, 860, 1360, 0.5],
+    [1280, 1990, 1540, 2010, 0.38],
+  ];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const o = (y * width + x) * ch;
+      if (ch === 4 && data[o + 3] < 8) continue;
+      const r = data[o], g = data[o + 1], b = data[o + 2];
+      const [h, s, v] = rgb2hsv(r, g, b);
+
+      // 1) 桃色刘海块（原漏染的高亮棕发）→ 银白
+      if (x >= 540 && x <= 1080 && y >= 30 && y <= 470 && h >= 10 && h <= 60 && s >= 0.03 && s <= 0.6 && v >= 0.55) {
+        const nv = clamp(0.88 + (v - 0.9) * 0.35, 0.82, 0.99);
+        const [nr, ng, nb] = hsv2rgb(215, clamp(s * 0.25, 0.02, 0.12), nv);
+        data[o] = Math.round(nr); data[o + 1] = Math.round(ng); data[o + 2] = Math.round(nb);
+        bangs++;
+        continue;
+      }
+
+      // 2) 银白发梢 → 淡蓝渐变（越靠近发梢越蓝，暗部少染）
+      const isHairish = (s < 0.3 && v > 0.35) && (h >= 180 && h <= 270 || v > 0.5);
+      if (!isHairish) continue;
+      for (const [zx0, zx1, zy0, zy1, fMax] of tipZones) {
+        if (x < zx0 || x > zx1 || y < zy0 || y > zy1) continue;
+        const t = Math.pow(clamp((y - zy0) / (zy1 - zy0), 0, 1), 1.6);
+        const f = t * fMax * clamp(v / 0.9, 0.25, 1);
+        data[o] = Math.round(r * (1 - f) + 172 * f);
+        data[o + 1] = Math.round(g * (1 - f) + 200 * f);
+        data[o + 2] = Math.round(b * (1 - f) + 238 * f);
+        tip++;
+        break;
+      }
+    }
+  }
+  console.log(`  t0 refine: bangs ${bangs} px, tip gradient ${tip} px`);
+
+  // 3) 蓝色缎带/蝴蝶结上画白色五角星（位置按蓝色像素密度图实测；
+  //    注意 (160,915)/(368,915) 一带是眼睛——Hiyori 自带星星瞳孔，不要覆盖）
+  const ribbonStars = [
+    [295, 1437, 12],   // 胸前斜缎带
+    [64, 1690, 13],    // 左竖缎带
+    [176, 1690, 13],   // 右竖缎带
+  ];
+  let rs = 0;
+  for (const [sx, sy, R] of ribbonStars) {
+    rs += paintStar5(data, width, height, ch, sx, sy, R, [250, 252, 255], [250, 252, 255], true);
+  }
+  console.log(`  t0 refine: ribbon stars ${rs} px`);
+}
+
+// 简易蝴蝶结：左右两片三角翼 + 中心结（可限制只画在浅色像素上）
+function paintBow(data, width, height, ch, cx, cy, R, col, onlyLight) {
+  const wings = [
+    [[-1.15, -0.62], [-1.15, 0.62], [-0.1, 0]],
+    [[1.15, -0.62], [1.15, 0.62], [0.1, 0]],
+  ];
+  let n = 0;
+  const rOut = Math.ceil(R * 1.2) + 2;
+  const inBow = (px, py) => {
+    if (Math.hypot(px, py) < R * 0.34) return true; // 中心结
+    for (const tri of wings) {
+      const pts = tri.map(([ux, uy]) => [ux * R, uy * R]);
+      if (pointInPoly(px, py, pts)) return true;
+    }
+    return false;
+  };
+  for (let dy = -rOut; dy <= rOut; dy++) {
+    for (let dx = -rOut; dx <= rOut; dx++) {
+      if (!inBow(dx, dy)) continue;
+      const x = Math.round(cx + dx), y = Math.round(cy + dy);
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+      const o = (y * width + x) * ch;
+      if (ch === 4 && data[o + 3] < 8) continue;
+      if (onlyLight) {
+        const [, s0, v0] = rgb2hsv(data[o], data[o + 1], data[o + 2]);
+        if (!(s0 < 0.28 && v0 > 0.68)) continue; // 只画在白袜上
+      }
+      data[o] = Math.round(data[o] * 0.15 + col[0] * 0.85);
+      data[o + 1] = Math.round(data[o + 1] * 0.15 + col[1] * 0.85);
+      data[o + 2] = Math.round(data[o + 2] * 0.15 + col[2] * 0.85);
+      n++;
+    }
+  }
+  return n;
+}
+
+// ---------- texture_01 精修：袜口蝴蝶结 + 鞋底蓝边 + 裙摆补星 ----------
+function refineT1(data, width, height, ch) {
+  // 1) 袜口侧面小蓝蝴蝶结：沿每只袜子外侧找蓝色饰带顶边，往下贴一只结
+  //    左袜结贴外侧左缘 (+14)，右袜结贴外侧右缘 (-14)，避免越出袜子
+  const bowCols = [
+    [852, 1],
+    [1276, -1],
+  ];
+  let bows = 0;
+  for (const [bx0, dir] of bowCols) {
+    let bandY = -1, bx = bx0;
+    for (const cx of [bx0, bx0 - 6 * dir, bx0 - 12 * dir]) {
+      for (let y = 900; y < 1350; y++) {
+        const o = (y * width + cx) * ch;
+        if (ch === 4 && data[o + 3] < 8) continue;
+        const [h0, s0, v0] = rgb2hsv(data[o], data[o + 1], data[o + 2]);
+        if (h0 >= 200 && h0 <= 240 && s0 > 0.3 && v0 > 0.55) { bandY = y; bx = cx; break; }
+      }
+      if (bandY >= 0) break;
+    }
+    if (bandY < 0) continue;
+    bows += paintBow(data, width, height, ch, bx + 14 * dir, bandY + 58, 17, [96, 138, 214], true);
+  }
+  console.log(`  t1 refine: sock bows ${bows} px`);
+
+  // 2) 鞋底蓝边：每只鞋矩形内逐列找不透明最底端，往上 55px 染蓝
+  const shoes = [
+    [30, 215, 1400, 1820],
+    [220, 465, 1400, 1820],
+  ];
+  let sole = 0;
+  for (const [x0, x1, y0, y1] of shoes) {
+    for (let x = x0; x <= x1; x++) {
+      let bottom = -1;
+      for (let y = y1; y >= y0; y--) {
+        const o = (y * width + x) * ch;
+        if (ch === 4 && data[o + 3] < 8) continue;
+        bottom = y; break;
+      }
+      if (bottom < 0) continue;
+      for (let y = Math.max(y0, bottom - 60); y <= bottom; y++) {
+        const o = (y * width + x) * ch;
+        if (ch === 4 && data[o + 3] < 8) continue;
+        const [, s0, v0] = rgb2hsv(data[o], data[o + 1], data[o + 2]);
+        if (!(s0 < 0.5 && v0 > 0.3)) continue;
+        const f = 0.55;
+        data[o] = Math.round(data[o] * (1 - f) + 118 * f);
+        data[o + 1] = Math.round(data[o + 1] * (1 - f) + 158 * f);
+        data[o + 2] = Math.round(data[o + 2] * (1 - f) + 226 * f);
+        sole++;
+      }
+    }
+  }
+  console.log(`  t1 refine: shoe soles ${sole} px`);
+
+  // 3) 裙摆补两颗小金星（与已有白星错开）
+  const sL = 16, sR = 780, sT = 1195, sB = 1430;
+  const bw = sR - sL, bh = sB - sT;
+  const gold = [242, 196, 92];
+  let stars = 0;
+  for (const [fx, fy, r] of [[0.08, 0.58, 10], [0.56, 0.78, 10]]) {
+    stars += paintStar5(data, width, height, ch, sL + fx * bw, sT + fy * bh, r, gold, gold, true);
+  }
+  console.log(`  t1 refine: extra skirt stars ${stars} px`);
 }
 
 // ---------- texture_01：整套服装替换 ----------
@@ -319,10 +502,15 @@ async function main() {
   fs.mkdirSync(path.join(DST, 'Lidousha.2048'), { recursive: true });
   fs.mkdirSync(path.join(DST, 'motions'), { recursive: true });
 
-  await recolorFile('Hiyori.2048/texture_00.png', 'Lidousha.2048/texture_00.png', recolorT0);
+  await recolorFile('Hiyori.2048/texture_00.png', 'Lidousha.2048/texture_00.png', (d, w, h, c) => {
+    recolorT0(d, w, h, c);
+    refineT0(d, w, h, c);
+  });
   await recolorFile('Hiyori.2048/texture_01.png', 'Lidousha.2048/texture_01.png', (d, w, h, c) => {
     recolorT1(d, w, h, c);
     decorateT1(d, w, h, c);
+    paintSockBands(d, w, h, c);
+    refineT1(d, w, h, c);
   });
   await sharp(path.join(SRC, 'Hiyori.2048/texture_00.png')).metadata(); // noop keep sharp import used
 

@@ -69,6 +69,7 @@ function pickWeighted(lines: Line[]): Line | null {
 export default function Mascot() {
   const canvasHost = useRef<HTMLDivElement>(null);
   const modelRef = useRef<any>(null);
+  const earsTickRef = useRef<(() => void) | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [bubble, setBubble] = useState<string | null>(null);
   const [modelOk, setModelOk] = useState(false);
@@ -137,6 +138,52 @@ export default function Mascot() {
         } catch (micErr) {
           console.warn('[Mascot] mic sprite 失败：', micErr);
         }
+        // 熊猫耳：跟随头部网格（取最靠上的部件）逐帧同步位置与旋转，随转头/摆动一起动
+        try {
+          const im: any = model.internalModel;
+          const core: any = im.coreModel;
+          const count: number = core.getDrawableCount();
+          const bbox = (idx: number) => {
+            const v: number[] = im.getDrawableVertices(idx);
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            for (let k = 0; k < v.length; k += 2) {
+              if (v[k] < minX) minX = v[k];
+              if (v[k] > maxX) maxX = v[k];
+              if (v[k + 1] < minY) minY = v[k + 1];
+              if (v[k + 1] > maxY) maxY = v[k + 1];
+            }
+            return { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, top: minY, w: maxX - minX, h: maxY - minY };
+          };
+          // 头顶部件：中心最靠上且有一定宽度（排除细碎发丝）
+          let headIdx = -1, best = Infinity;
+          for (let i = 0; i < count; i++) {
+            const b = bbox(i);
+            if (b.w < 90) continue;
+            if (b.cy < best) { best = b.cy; headIdx = i; }
+          }
+          if (headIdx >= 0) {
+            const ref = bbox(headIdx);
+            const ears = new PIXI.Sprite(PIXI.Texture.from('/live2d/lidousha/ears.png'));
+            ears.anchor.set(0.5, 1.06); // 略微陷入头发，像戴在头上
+            ears.scale.set((ref.w * 1.12) / 220); // ears.png 宽 220
+            model.addChild(ears);
+            const oy = ref.top - ref.cy; // 头顶相对头部中心的偏移（负值，在上方）
+            const tick = () => {
+              if (ears.destroyed) return;
+              const b = bbox(headIdx);
+              let deg = 0;
+              try { deg = core.getParameterValueById('ParamAngleZ') || 0; } catch { /* 参数不存在 */ }
+              const t = -deg * (Math.PI / 180) * 0.7; // Cubism 角度 → PIXI（Y 向下）旋转
+              ears.position.set(b.cx - oy * Math.sin(t), b.cy + oy * Math.cos(t));
+              ears.rotation = t;
+            };
+            tick();
+            PIXI.Ticker.shared.add(tick);
+            earsTickRef.current = tick;
+          }
+        } catch (earErr) {
+          console.warn('[Mascot] 熊猫耳挂载失败：', earErr);
+        }
         setModelOk(true);
       } catch (err) {
         // 模型加载失败（未放文件 / 核心脚本不可用 / 版本不兼容）：保持隐藏，不回退立牌
@@ -146,6 +193,13 @@ export default function Mascot() {
     })();
     return () => {
       disposed = true;
+      // 卸载时移除熊猫耳的逐帧回调，避免泄漏
+      if (earsTickRef.current) {
+        import('pixi.js')
+          .then((PIXI: any) => PIXI.Ticker.shared.remove(earsTickRef.current))
+          .catch(() => undefined);
+        earsTickRef.current = null;
+      }
     };
   }, [load]);
 
